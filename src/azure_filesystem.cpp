@@ -15,7 +15,7 @@ bool AzureContextState::IsValid() const {
 	return is_valid;
 }
 
-void AzureContextState::QueryEnd() {
+void AzureContextState::QueryEnd(optional_ptr<ErrorData>) {
 	is_valid = false;
 }
 

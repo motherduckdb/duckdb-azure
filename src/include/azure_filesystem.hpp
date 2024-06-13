@@ -24,7 +24,7 @@ public:
 
 public:
 	virtual bool IsValid() const;
-	void QueryEnd() override;
+	void QueryEnd(optional_ptr<ErrorData> error) override;
 
 	template <class TARGET>
 	TARGET &As() {
