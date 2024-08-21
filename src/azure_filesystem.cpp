@@ -169,21 +169,20 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 
 		auto context_key = GetContextPrefix() + parsed_url.storage_account_name;
 
-		auto &registered_state = client_context->registered_state;
-		auto storage_account_it = registered_state.find(context_key);
-		if (storage_account_it == registered_state.end()) {
+		auto &registered_state = *client_context->registered_state;
+		auto azure_context_state = registered_state.Get<AzureContextState>(context_key);
+		if (!azure_context_state) {
 			result = CreateStorageContext(opener, path, parsed_url);
-			registered_state.insert(std::make_pair(context_key, result));
+			registered_state.Insert(context_key, result);
 		} else {
-			auto *azure_context_state = static_cast<AzureContextState *>(storage_account_it->second.get());
 			// We keep the context valid until the QueryEnd (cf: AzureBlobContextState#QueryEnd())
 			// we do so because between queries the user can change the secret/variable that has been set
 			// the side effect of that is that we will reconnect (potentially retrieve a new token) on each request
 			if (!azure_context_state->IsValid()) {
 				result = CreateStorageContext(opener, path, parsed_url);
-				registered_state[context_key] = result;
+				registered_state.Insert(context_key, result);
 			} else {
-				result = shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
+				result = azure_context_state;
 			}
 		}
 	} else {
@@ -192,6 +191,7 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 
 	return result;
 }
+
 
 AzureReadOptions AzureStorageFileSystem::ParseAzureReadOptions(optional_ptr<FileOpener> opener) {
 	AzureReadOptions options;
