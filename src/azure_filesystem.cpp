@@ -21,7 +21,7 @@ void AzureContextState::QueryEnd() {
 
 AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, FileOpenFlags flags,
                                  const AzureReadOptions &read_options)
-    : FileHandle(fs, std::move(path)), flags(flags),
+    : FileHandle(fs, std::move(path), flags), flags(flags),
       // File info
       length(0), last_modified(0),
       // Read info
