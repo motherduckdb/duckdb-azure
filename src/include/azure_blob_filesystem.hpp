@@ -35,7 +35,7 @@ public:
 
 class AzureBlobStorageFileSystem : public AzureStorageFileSystem {
 public:
-	vector<string> Glob(const string &path, FileOpener *opener = nullptr) override;
+	vector<OpenFileInfo> Glob(const string &path, FileOpener *opener = nullptr) override;
 
 	// FS methods
 	bool FileExists(const string &filename, optional_ptr<FileOpener> opener = nullptr) override;

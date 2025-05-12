@@ -28,7 +28,7 @@ inline static bool IsDfsScheme(const string &fpath) {
 }
 
 static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient &fs, const std::string &path,
-                 const string &path_pattern, std::size_t end_match, std::vector<std::string> *out_result) {
+                 const string &path_pattern, std::size_t end_match, std::vector<OpenFileInfo> *out_result) {
 	auto directory_client = fs.GetDirectoryClient(path);
 
 	bool recursive = false;
@@ -118,7 +118,7 @@ bool AzureDfsStorageFileSystem::CanHandleFile(const string &fpath) {
 	return IsDfsScheme(fpath);
 }
 
-vector<string> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *opener) {
+vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *opener) {
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage Glob without FileOpener");
 	}
@@ -141,7 +141,7 @@ vector<string> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *o
 	}
 	auto shared_path = azure_url.path.substr(0, index_root_dir);
 
-	std::vector<std::string> result;
+	std::vector<OpenFileInfo> result;
 	Walk(dfs_filesystem_client, shared_path,
 	     // pattern to match
 	     azure_url.path, std::min(azure_url.path.length(), azure_url.path.find('/', index_root_dir + 1)),
@@ -155,7 +155,7 @@ vector<string> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *o
 		                                  : (azure_url.prefix + azure_url.container)) +
 		    '/';
 		for (auto &elt : result) {
-			elt = path_result_prefix + elt;
+			elt = path_result_prefix + elt.path;
 		}
 	}
 
