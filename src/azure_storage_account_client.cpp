@@ -173,7 +173,7 @@ CreateClientCredential(const std::string &tenant_id, const std::string &client_i
 	auto credential_options = ToTokenCredentialOptions(transport_options);
 	if (!client_secret.empty()) {
 		return std::make_shared<Azure::Identity::ClientSecretCredential>(tenant_id, client_id, client_secret,
-		                                                                credential_options);
+		                                                                 credential_options);
 	} else if (!client_certificate_path.empty()) {
 		return std::make_shared<Azure::Identity::ClientCertificateCredential>(
 		    tenant_id, client_id, client_certificate_path, credential_options);
@@ -202,14 +202,16 @@ CreateClientCredential(const KeyValueSecret &secret,
 
 class AccessTokenCredential : public Azure::Core::Credentials::TokenCredential {
 public:
-	AccessTokenCredential(const std::string& token) : Azure::Core::Credentials::TokenCredential("AccessTokenCredential") {
+	AccessTokenCredential(const std::string &token)
+	    : Azure::Core::Credentials::TokenCredential("AccessTokenCredential") {
 		access_token.Token = token;
-		access_token.ExpiresOn = Azure::DateTime::max(); // Refreshing tokens is not supported, so setting expiry time to infinity
+		access_token.ExpiresOn =
+		    Azure::DateTime::max(); // Refreshing tokens is not supported, so setting expiry time to infinity
 	}
 
-	Azure::Core::Credentials::AccessToken GetToken(
-		Azure::Core::Credentials::TokenRequestContext const& tokenRequestContext,
-		Azure::Core::Context const& context) const override {
+	Azure::Core::Credentials::AccessToken
+	GetToken(Azure::Core::Credentials::TokenRequestContext const &tokenRequestContext,
+	         Azure::Core::Context const &context) const override {
 		return access_token;
 	};
 
