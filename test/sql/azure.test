@@ -63,5 +63,5 @@ analyzed_plan	<REGEX>:.*HTTP Stats.*in\: 4\.8 MiB.*\#HEAD\: 2.*GET\: 0.*PUT\: 0.
 query II
 EXPLAIN ANALYZE SELECT COUNT(*) FROM "azure://testing-public/l.parquet";
 ----
-analyzed_plan	<REGEX>:.*HTTP Stats.*in\: 4\.8 MiB.*\#HEAD\: 2.*GET\: 2.*PUT\: 0.*\#POST\: 0.*
+analyzed_plan	<REGEX>:.*HTTP Stats.*in\: 2\.4 MiB.*\#HEAD\: 1.*GET\: 1.*PUT\: 0.*\#POST\: 0.*
 
