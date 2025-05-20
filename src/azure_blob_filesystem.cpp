@@ -100,7 +100,7 @@ bool AzureBlobStorageFileSystem::CanHandleFile(const string &fpath) {
 	return fpath.rfind(PATH_PREFIX, 0) * fpath.rfind(SHORT_PATH_PREFIX, 0) == 0;
 }
 
-vector<string> AzureBlobStorageFileSystem::Glob(const string &path, FileOpener *opener) {
+vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOpener *opener) {
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage Glob without FileOpener");
 	}
@@ -118,7 +118,7 @@ vector<string> AzureBlobStorageFileSystem::Glob(const string &path, FileOpener *
 	auto container_client = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(azure_url.container);
 
 	const auto pattern_splits = StringUtil::Split(azure_url.path, "/");
-	vector<string> result;
+	vector<OpenFileInfo> result;
 
 	Azure::Storage::Blobs::ListBlobsOptions options;
 	options.Prefix = shared_path;
