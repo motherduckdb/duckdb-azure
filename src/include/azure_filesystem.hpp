@@ -18,13 +18,6 @@ struct AzureReadOptions {
 	idx_t buffer_size = 1 * 1024 * 1024;
 };
 
-struct AzurePathMetadata {
-	time_t last_modified = 0;
-	idx_t file_size = 0;
-};
-
-using AzurePathMetadataCache = std::map<std::string, AzurePathMetadata>;
-
 class AzureContextState : public ClientContextState {
 public:
 	const AzureReadOptions read_options;
@@ -60,7 +53,8 @@ public:
 	}
 
 protected:
-	AzureFileHandle(AzureStorageFileSystem &fs, string path, FileOpenFlags flags, const AzureReadOptions &read_options);
+	AzureFileHandle(AzureStorageFileSystem &fs, string path, const OpenFileInfo &info, FileOpenFlags flags,
+	                const AzureReadOptions &read_options);
 
 public:
 	FileOpenFlags flags;
@@ -106,7 +100,14 @@ public:
 	bool LoadFileInfo(AzureFileHandle &handle);
 
 protected:
-	virtual duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, FileOpenFlags flags,
+	unique_ptr<FileHandle> OpenFileExtended(const OpenFileInfo &info, FileOpenFlags flags,
+	                                        optional_ptr<FileOpener> opener) override;
+
+	bool SupportsOpenFileExtended() const override {
+		return true;
+	}
+
+	virtual duckdb::unique_ptr<AzureFileHandle> CreateHandle(const OpenFileInfo &info, FileOpenFlags flags,
 	                                                         optional_ptr<FileOpener> opener) = 0;
 	virtual void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) = 0;
 
@@ -118,10 +119,6 @@ protected:
 
 	virtual void LoadRemoteFileInfo(AzureFileHandle &handle) = 0;
 	static AzureReadOptions ParseAzureReadOptions(optional_ptr<FileOpener> opener);
-
-	// Cache with metadata of paths, this is useful for performance to avoid making
-	// multiple requests to the Azure service for getting properties of same path.
-	AzurePathMetadataCache path_metadata_cache;
 
 public:
 	static time_t ToTimeT(const Azure::DateTime &dt);

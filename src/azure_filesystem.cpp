@@ -19,7 +19,7 @@ void AzureContextState::QueryEnd() {
 	is_valid = false;
 }
 
-AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, FileOpenFlags flags,
+AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, const OpenFileInfo &info, FileOpenFlags flags,
                                  const AzureReadOptions &read_options)
     : FileHandle(fs, std::move(path), flags), flags(flags),
       // File info
@@ -30,6 +30,18 @@ AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, FileOp
       read_options(read_options) {
 	if (!flags.RequireParallelAccess() && !flags.DirectIO()) {
 		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[read_options.buffer_size]);
+	}
+
+	// Set metadata of file when available, it avoids to invoke to the storage to get them.
+	if (info.extended_info) {
+		auto entry1 = info.extended_info->options.find("file_size");
+		if (entry1 != info.extended_info->options.end()) {
+			length = BigIntValue::Get(entry1->second);
+		}
+		auto entry2 = info.extended_info->options.find("last_modified");
+		if (entry2 != info.extended_info->options.end()) {
+			last_modified = BigIntValue::Get(entry2->second);
+		}
 	}
 }
 
@@ -59,16 +71,21 @@ bool AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
 	return true;
 }
 
-unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, FileOpenFlags flags,
-                                                        optional_ptr<FileOpener> opener) {
+unique_ptr<FileHandle> AzureStorageFileSystem::OpenFileExtended(const OpenFileInfo &info, FileOpenFlags flags,
+                                                                optional_ptr<FileOpener> opener) {
 	D_ASSERT(flags.Compression() == FileCompressionType::UNCOMPRESSED);
 
 	if (flags.OpenForWriting()) {
 		throw NotImplementedException("Writing to Azure containers is currently not supported");
 	}
 
-	auto handle = CreateHandle(path, flags, opener);
+	auto handle = CreateHandle(info, flags, opener);
 	return std::move(handle);
+}
+
+unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, FileOpenFlags flags,
+                                                        optional_ptr<FileOpener> opener) {
+	return OpenFileExtended(OpenFileInfo(path), flags, opener);
 }
 
 int64_t AzureStorageFileSystem::GetFileSize(FileHandle &handle) {

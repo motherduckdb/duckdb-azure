@@ -29,7 +29,7 @@ inline static bool IsDfsScheme(const string &fpath) {
 }
 
 static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient &fs, const std::string &path,
-                 const string &path_pattern, std::size_t end_match, std::vector<OpenFileInfo> *out_result, AzurePathMetadataCache *out_path_metadata_cache) {
+                 const string &path_pattern, std::size_t end_match, std::vector<OpenFileInfo> *out_result) {
 	auto directory_client = fs.GetDirectoryClient(path);
 
 	bool recursive = false;
@@ -57,18 +57,18 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 							continue;
 						}
 						Walk(fs, elt.Name, path_pattern,
-						     std::min(path_pattern.length(), path_pattern.find('/', end_match + 1)),
-						     out_result,
-						     out_path_metadata_cache);
+						     std::min(path_pattern.length(), path_pattern.find('/', end_match + 1)), out_result);
 					}
 				}
 			} else {
 				// File
 				if (Glob(elt.Name.data(), elt.Name.length(), path_pattern.data(), path_pattern.length())) {
-					out_result->push_back(elt.Name);
-					auto last_modified = AzureStorageFileSystem::ToTimeT(elt.LastModified);
-					auto file_size = (idx_t)elt.FileSize;
-					out_path_metadata_cache->insert({elt.Name, AzurePathMetadata{last_modified, file_size}});
+					OpenFileInfo info(elt.Name);
+					info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
+					auto &options = info.extended_info->options;
+					options.emplace("file_size", elt.FileSize);
+					options.emplace("last_modified", AzureStorageFileSystem::ToTimeT(elt.LastModified));
+					out_result->push_back(info);
 				}
 			}
 		}
@@ -93,14 +93,15 @@ AzureDfsContextState::GetDfsFileSystemClient(const std::string &file_system_name
 }
 
 //////// AzureDfsContextState ////////
-AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, string path, FileOpenFlags flags,
+AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, string path,
+                                                     const OpenFileInfo &info, FileOpenFlags flags,
                                                      const AzureReadOptions &read_options,
                                                      Azure::Storage::Files::DataLake::DataLakeFileClient client)
-    : AzureFileHandle(fs, std::move(path), flags, read_options), file_client(std::move(client)) {
+    : AzureFileHandle(fs, std::move(path), info, flags, read_options), file_client(std::move(client)) {
 }
 
 //////// AzureDfsStorageFileSystem ////////
-unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const string &path, FileOpenFlags flags,
+unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const OpenFileInfo &info, FileOpenFlags flags,
                                                                     optional_ptr<FileOpener> opener) {
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage CreateHandle without FileOpener");
@@ -108,11 +109,11 @@ unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const string
 
 	D_ASSERT(flags.Compression() == FileCompressionType::UNCOMPRESSED);
 
-	auto parsed_url = ParseUrl(path);
-	auto storage_context = GetOrCreateStorageContext(opener, path, parsed_url);
+	auto parsed_url = ParseUrl(info.path);
+	auto storage_context = GetOrCreateStorageContext(opener, info.path, parsed_url);
 	auto file_system_client = storage_context->As<AzureDfsContextState>().GetDfsFileSystemClient(parsed_url.container);
 
-	auto handle = make_uniq<AzureDfsStorageFileHandle>(*this, path, flags, storage_context->read_options,
+	auto handle = make_uniq<AzureDfsStorageFileHandle>(*this, info.path, info, flags, storage_context->read_options,
 	                                                   file_system_client.GetFileClient(parsed_url.path));
 	if (!handle->PostConstruct()) {
 		return nullptr;
@@ -152,8 +153,7 @@ vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpe
 	     // pattern to match
 	     azure_url.path, std::min(azure_url.path.length(), azure_url.path.find('/', index_root_dir + 1)),
 	     // output result
-	     &result,
-	     &path_metadata_cache);
+	     &result);
 
 	if (!result.empty()) {
 		const auto path_result_prefix =
@@ -162,7 +162,7 @@ vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpe
 		                                  : (azure_url.prefix + azure_url.container)) +
 		    '/';
 		for (auto &elt : result) {
-			elt = path_result_prefix + elt.path;
+			elt.path = path_result_prefix + elt.path;
 		}
 	}
 
@@ -172,15 +172,7 @@ vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpe
 void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	auto &hfh = handle.Cast<AzureDfsStorageFileHandle>();
 
-	const std::string &path = handle.path;
-	auto azure_url = ParseUrl(path);
-
-	auto entry = path_metadata_cache.find(azure_url.path);
-	if (entry != path_metadata_cache.end()) {
-		hfh.length = entry->second.file_size;
-		hfh.last_modified = entry->second.last_modified;
-	}
-	else {
+	if (hfh.length == 0 && hfh.last_modified == 0) {
 		auto res = hfh.file_client.GetProperties();
 		hfh.length = res.Value.FileSize;
 		hfh.last_modified = ToTimeT(res.Value.LastModified);
