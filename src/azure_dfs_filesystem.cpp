@@ -94,11 +94,10 @@ AzureDfsContextState::GetDfsFileSystemClient(const std::string &file_system_name
 }
 
 //////// AzureDfsContextState ////////
-AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, string path,
-                                                     const OpenFileInfo &info, FileOpenFlags flags,
-                                                     const AzureReadOptions &read_options,
+AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, const OpenFileInfo &info,
+                                                     FileOpenFlags flags, const AzureReadOptions &read_options,
                                                      Azure::Storage::Files::DataLake::DataLakeFileClient client)
-    : AzureFileHandle(fs, std::move(path), info, flags, read_options), file_client(std::move(client)) {
+    : AzureFileHandle(fs, info, flags, read_options), file_client(std::move(client)) {
 }
 
 //////// AzureDfsStorageFileSystem ////////
@@ -114,7 +113,7 @@ unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const OpenFi
 	auto storage_context = GetOrCreateStorageContext(opener, info.path, parsed_url);
 	auto file_system_client = storage_context->As<AzureDfsContextState>().GetDfsFileSystemClient(parsed_url.container);
 
-	auto handle = make_uniq<AzureDfsStorageFileHandle>(*this, info.path, info, flags, storage_context->read_options,
+	auto handle = make_uniq<AzureDfsStorageFileHandle>(*this, info, flags, storage_context->read_options,
 	                                                   file_system_client.GetFileClient(parsed_url.path));
 	if (!handle->PostConstruct()) {
 		return nullptr;

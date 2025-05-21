@@ -19,9 +19,9 @@ void AzureContextState::QueryEnd() {
 	is_valid = false;
 }
 
-AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, const OpenFileInfo &info, FileOpenFlags flags,
+AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
                                  const AzureReadOptions &read_options)
-    : FileHandle(fs, std::move(path), flags), flags(flags),
+    : FileHandle(fs, info.path, flags), flags(flags),
       // File info
       length(0), last_modified(0),
       // Read info

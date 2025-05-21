@@ -68,11 +68,10 @@ AzureBlobContextState::GetBlobContainerClient(const std::string &blobContainerNa
 }
 
 //////// AzureBlobStorageFileHandle ////////
-AzureBlobStorageFileHandle::AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, string path,
-                                                       const OpenFileInfo &info, FileOpenFlags flags,
-                                                       const AzureReadOptions &read_options,
+AzureBlobStorageFileHandle::AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, const OpenFileInfo &info,
+                                                       FileOpenFlags flags, const AzureReadOptions &read_options,
                                                        Azure::Storage::Blobs::BlobClient blob_client)
-    : AzureFileHandle(fs, std::move(path), info, flags, read_options), blob_client(std::move(blob_client)) {
+    : AzureFileHandle(fs, info, flags, read_options), blob_client(std::move(blob_client)) {
 }
 
 //////// AzureBlobStorageFileSystem ////////
@@ -89,7 +88,7 @@ unique_ptr<AzureFileHandle> AzureBlobStorageFileSystem::CreateHandle(const OpenF
 	auto container = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(parsed_url.container);
 	auto blob_client = container.GetBlockBlobClient(parsed_url.path);
 
-	auto handle = make_uniq<AzureBlobStorageFileHandle>(*this, info.path, info, flags, storage_context->read_options,
+	auto handle = make_uniq<AzureBlobStorageFileHandle>(*this, info, flags, storage_context->read_options,
 	                                                    std::move(blob_client));
 	if (!handle->PostConstruct()) {
 		return nullptr;

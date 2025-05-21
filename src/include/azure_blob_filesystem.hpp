@@ -25,9 +25,8 @@ class AzureBlobStorageFileSystem;
 
 class AzureBlobStorageFileHandle : public AzureFileHandle {
 public:
-	AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, string path, const OpenFileInfo &info,
-	                           FileOpenFlags flags, const AzureReadOptions &read_options,
-	                           Azure::Storage::Blobs::BlobClient blob_client);
+	AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
+	                           const AzureReadOptions &read_options, Azure::Storage::Blobs::BlobClient blob_client);
 	~AzureBlobStorageFileHandle() override = default;
 
 public:

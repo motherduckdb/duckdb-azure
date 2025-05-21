@@ -53,7 +53,7 @@ public:
 	}
 
 protected:
-	AzureFileHandle(AzureStorageFileSystem &fs, string path, const OpenFileInfo &info, FileOpenFlags flags,
+	AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
 	                const AzureReadOptions &read_options);
 
 public:
