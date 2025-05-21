@@ -151,8 +151,9 @@ vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOp
 				OpenFileInfo info(result_full_url);
 				info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
 				auto &options = info.extended_info->options;
-				options.emplace("file_size", key.BlobSize);
-				options.emplace("last_modified", AzureStorageFileSystem::ToTimeT(key.Details.LastModified));
+				options.emplace("file_size", Value::BIGINT(key.BlobSize));
+				options.emplace("last_modified", Value::TIMESTAMP(Timestamp::FromTimeT(
+				                                     AzureStorageFileSystem::ToTimeT(key.Details.LastModified))));
 				result.push_back(info);
 			}
 		}

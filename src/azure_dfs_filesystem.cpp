@@ -66,8 +66,9 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 					OpenFileInfo info(elt.Name);
 					info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
 					auto &options = info.extended_info->options;
-					options.emplace("file_size", elt.FileSize);
-					options.emplace("last_modified", AzureStorageFileSystem::ToTimeT(elt.LastModified));
+					options.emplace("file_size", Value::BIGINT(elt.FileSize));
+					options.emplace("last_modified", Value::TIMESTAMP(Timestamp::FromTimeT(
+					                                     AzureStorageFileSystem::ToTimeT(elt.LastModified))));
 					out_result->push_back(info);
 				}
 			}

@@ -36,11 +36,11 @@ AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, const 
 	if (info.extended_info) {
 		auto entry1 = info.extended_info->options.find("file_size");
 		if (entry1 != info.extended_info->options.end()) {
-			length = BigIntValue::Get(entry1->second);
+			length = entry1->second.GetValue<uint64_t>();
 		}
 		auto entry2 = info.extended_info->options.find("last_modified");
 		if (entry2 != info.extended_info->options.end()) {
-			last_modified = BigIntValue::Get(entry2->second);
+			last_modified = Timestamp::ToTimeT(entry2->second.GetValue<timestamp_t>());
 		}
 	}
 }
