@@ -99,6 +99,10 @@ public:
 
 	bool LoadFileInfo(AzureFileHandle &handle);
 
+	string PathSeparator(const string &path) override {
+		return "/";
+	}
+
 protected:
 	unique_ptr<FileHandle> OpenFileExtended(const OpenFileInfo &info, FileOpenFlags flags,
 	                                        optional_ptr<FileOpener> opener) override;
