@@ -12,7 +12,7 @@
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/function/scalar/string_common.hpp"
 #include "duckdb/function/scalar_function.hpp"
-#include "duckdb/main/extension_util.hpp"
+#include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/client_data.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include <azure/storage/blobs.hpp>

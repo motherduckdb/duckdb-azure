@@ -18,7 +18,7 @@ class CreateSecretFunction;
 struct CreateAzureSecretFunctions {
 public:
 	//! Register all CreateSecretFunctions
-	static void Register(DatabaseInstance &instance);
+	static void Register(ExtensionLoader &instance);
 };
 
 } // namespace duckdb

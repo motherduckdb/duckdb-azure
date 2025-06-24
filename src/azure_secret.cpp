@@ -2,7 +2,7 @@
 #include "azure_dfs_filesystem.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/unique_ptr.hpp"
-#include "duckdb/main/extension_util.hpp"
+#include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/secret/secret.hpp"
 #include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
@@ -148,7 +148,7 @@ static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
 	function.named_parameters["proxy_password"] = LogicalType::VARCHAR;
 }
 
-void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
+void CreateAzureSecretFunctions::Register(ExtensionLoader &loader) {
 	string type = "azure";
 
 	// Register the new type
@@ -156,19 +156,19 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	secret_type.name = type;
 	secret_type.deserializer = KeyValueSecret::Deserialize<KeyValueSecret>;
 	secret_type.default_provider = "config";
-	ExtensionUtil::RegisterSecretType(instance, secret_type);
+	loader.RegisterSecretType(secret_type);
 
 	// Register the connection string secret provider
 	CreateSecretFunction connection_string_function = {type, "config", CreateAzureSecretFromConfig};
 	connection_string_function.named_parameters["connection_string"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(connection_string_function);
-	ExtensionUtil::RegisterFunction(instance, connection_string_function);
+	loader.RegisterFunction(connection_string_function);
 
 	// Register the credential_chain secret provider
 	CreateSecretFunction cred_chain_function = {type, "credential_chain", CreateAzureSecretFromCredentialChain};
 	cred_chain_function.named_parameters["chain"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(cred_chain_function);
-	ExtensionUtil::RegisterFunction(instance, cred_chain_function);
+	loader.RegisterFunction(cred_chain_function);
 
 	// Register the service_principal secret provider
 	CreateSecretFunction service_principal_function = {type, "service_principal",
@@ -178,13 +178,13 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	service_principal_function.named_parameters["client_secret"] = LogicalType::VARCHAR;
 	service_principal_function.named_parameters["client_certificate_path"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(service_principal_function);
-	ExtensionUtil::RegisterFunction(instance, service_principal_function);
+	loader.RegisterFunction(service_principal_function);
 
 	// Register the access_token secret provider
 	CreateSecretFunction access_token_function = {type, "access_token", CreateAzureSecretFromAccessToken};
 	access_token_function.named_parameters["access_token"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(access_token_function);
-	ExtensionUtil::RegisterFunction(instance, access_token_function);
+	loader.RegisterFunction(access_token_function);
 }
 
 } // namespace duckdb
