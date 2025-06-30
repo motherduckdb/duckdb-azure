@@ -1,5 +1,3 @@
-#define DUCKDB_EXTENSION_MAIN
-
 #include "azure_extension.hpp"
 #include "azure_blob_filesystem.hpp"
 #include "azure_dfs_filesystem.hpp"
@@ -7,14 +5,15 @@
 
 namespace duckdb {
 
-static void LoadInternal(DatabaseInstance &instance) {
+static void LoadInternal(ExtensionLoader &loader) {
 	// Load filesystem
+	auto &instance = loader.GetDatabaseInstance();
 	auto &fs = instance.GetFileSystem();
 	fs.RegisterSubSystem(make_uniq<AzureBlobStorageFileSystem>());
 	fs.RegisterSubSystem(make_uniq<AzureDfsStorageFileSystem>());
 
 	// Load Secret functions
-	CreateAzureSecretFunctions::Register(instance);
+	CreateAzureSecretFunctions::Register(loader);
 
 	// Load extension config
 	auto &config = DBConfig::GetConfig(instance);
@@ -77,8 +76,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 	                          Value(nullptr));
 }
 
-void AzureExtension::Load(DuckDB &db) {
-	LoadInternal(*db.instance);
+void AzureExtension::Load(ExtensionLoader &loader) {
+	LoadInternal(loader);
 }
 std::string AzureExtension::Name() {
 	return "azure";
@@ -88,15 +87,8 @@ std::string AzureExtension::Name() {
 
 extern "C" {
 
-DUCKDB_EXTENSION_API void azure_init(duckdb::DatabaseInstance &db) {
-	LoadInternal(db);
+DUCKDB_CPP_EXTENSION_ENTRY(azure, loader) {
+	duckdb::LoadInternal(loader);
 }
 
-DUCKDB_EXTENSION_API const char *azure_version() {
-	return duckdb::DuckDB::LibraryVersion();
 }
-}
-
-#ifndef DUCKDB_EXTENSION_MAIN
-#error DUCKDB_EXTENSION_MAIN not defined
-#endif
