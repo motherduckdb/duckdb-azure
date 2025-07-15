@@ -6,14 +6,11 @@
     "azure-storage-files-datalake-cpp"
   ],
   "vcpkg-configuration": {
-    "overlay-ports": [
-      "./vcpkg_ports"
-    ],
     "registries": [
       {
         "kind": "git",
         "repository": "https://github.com/duckdb/vcpkg-duckdb-ports",
-        "baseline": "0f9bf648ba1ee29291890a1ca9a49a80bba017eb",
+        "baseline": "eac17a423bbcf1a557771d25384548013f57f5b1",
         "packages": ["vcpkg-cmake"]
       }
     ]
