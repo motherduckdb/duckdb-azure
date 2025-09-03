@@ -1,8 +1,10 @@
 #include "azure_filesystem.hpp"
+
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/main/client_context.hpp"
+
 #include <azure/storage/common/storage_exception.hpp>
 
 namespace duckdb {
@@ -101,6 +103,11 @@ timestamp_t AzureStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
 void AzureStorageFileSystem::Seek(FileHandle &handle, idx_t location) {
 	auto &sfh = handle.Cast<AzureFileHandle>();
 	sfh.file_offset = location;
+}
+
+idx_t AzureStorageFileSystem::SeekPosition(FileHandle &handle) {
+	auto &afh = handle.Cast<AzureFileHandle>();
+	return afh.SeekPosition();
 }
 
 void AzureStorageFileSystem::FileSync(FileHandle &handle) {
