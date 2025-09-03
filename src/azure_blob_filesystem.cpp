@@ -12,7 +12,7 @@
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/function/scalar/string_common.hpp"
 #include "duckdb/function/scalar_function.hpp"
-#include "duckdb/main/extension_util.hpp"
+#include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/client_data.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include <azure/storage/blobs.hpp>
@@ -151,8 +151,8 @@ vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOp
 				info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
 				auto &options = info.extended_info->options;
 				options.emplace("file_size", Value::BIGINT(key.BlobSize));
-				options.emplace("last_modified", Value::TIMESTAMP(Timestamp::FromTimeT(
-				                                     AzureStorageFileSystem::ToTimeT(key.Details.LastModified))));
+				options.emplace("last_modified", Value::TIMESTAMP(
+				                                     AzureStorageFileSystem::ToTimestamp(key.Details.LastModified)));
 				result.push_back(info);
 			}
 		}
@@ -171,10 +171,10 @@ vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOp
 void AzureBlobStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	auto &hfh = handle.Cast<AzureBlobStorageFileHandle>();
 
-	if (hfh.length == 0 && hfh.last_modified == 0) {
+	if (hfh.length == 0 && hfh.last_modified == timestamp_t(0)) {
 		auto res = hfh.blob_client.GetProperties();
 		hfh.length = res.Value.BlobSize;
-		hfh.last_modified = ToTimeT(res.Value.LastModified);
+		hfh.last_modified = ToTimestamp(res.Value.LastModified);
 	}
 }
 

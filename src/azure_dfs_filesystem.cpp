@@ -67,8 +67,8 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 					info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
 					auto &options = info.extended_info->options;
 					options.emplace("file_size", Value::BIGINT(elt.FileSize));
-					options.emplace("last_modified", Value::TIMESTAMP(Timestamp::FromTimeT(
-					                                     AzureStorageFileSystem::ToTimeT(elt.LastModified))));
+					options.emplace("last_modified", Value::TIMESTAMP(
+					                                     AzureStorageFileSystem::ToTimestamp(elt.LastModified)));
 					out_result->push_back(info);
 				}
 			}
@@ -172,10 +172,10 @@ vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpe
 void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	auto &hfh = handle.Cast<AzureDfsStorageFileHandle>();
 
-	if (hfh.length == 0 && hfh.last_modified == 0) {
+	if (hfh.length == 0 && hfh.last_modified == timestamp_t(0)) {
 		auto res = hfh.file_client.GetProperties();
 		hfh.length = res.Value.FileSize;
-		hfh.last_modified = ToTimeT(res.Value.LastModified);
+		hfh.last_modified = ToTimestamp(res.Value.LastModified);
 	}
 }
 
