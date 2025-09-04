@@ -1,8 +1,10 @@
 #include "azure_filesystem.hpp"
+
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/main/client_context.hpp"
+
 #include <azure/storage/common/storage_exception.hpp>
 
 namespace duckdb {
@@ -40,7 +42,7 @@ AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo 
 		}
 		auto entry2 = info.extended_info->options.find("last_modified");
 		if (entry2 != info.extended_info->options.end()) {
-			last_modified = Timestamp::ToTimeT(entry2->second.GetValue<timestamp_t>());
+			last_modified = entry2->second.GetValue<timestamp_t>();
 		}
 	}
 }
@@ -93,7 +95,7 @@ int64_t AzureStorageFileSystem::GetFileSize(FileHandle &handle) {
 	return afh.length;
 }
 
-time_t AzureStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
+timestamp_t AzureStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
 	auto &afh = handle.Cast<AzureFileHandle>();
 	return afh.last_modified;
 }
@@ -101,6 +103,11 @@ time_t AzureStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
 void AzureStorageFileSystem::Seek(FileHandle &handle, idx_t location) {
 	auto &sfh = handle.Cast<AzureFileHandle>();
 	sfh.file_offset = location;
+}
+
+idx_t AzureStorageFileSystem::SeekPosition(FileHandle &handle) {
+	auto &afh = handle.Cast<AzureFileHandle>();
+	return afh.file_offset;
 }
 
 void AzureStorageFileSystem::FileSync(FileHandle &handle) {
@@ -228,9 +235,10 @@ AzureReadOptions AzureStorageFileSystem::ParseAzureReadOptions(optional_ptr<File
 	return options;
 }
 
-time_t AzureStorageFileSystem::ToTimeT(const Azure::DateTime &dt) {
+timestamp_t AzureStorageFileSystem::ToTimestamp(const Azure::DateTime &dt) {
 	auto time_point = static_cast<std::chrono::system_clock::time_point>(dt);
-	return std::chrono::system_clock::to_time_t(time_point);
+	auto micros = std::chrono::duration_cast<std::chrono::microseconds>(time_point.time_since_epoch()).count();
+	return timestamp_t(micros);
 }
 
 } // namespace duckdb

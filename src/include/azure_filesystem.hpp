@@ -61,7 +61,7 @@ public:
 
 	// File info
 	idx_t length;
-	time_t last_modified;
+	timestamp_t last_modified;
 
 	// Read buffer
 	duckdb::unique_ptr<data_t[]> read_buffer;
@@ -93,8 +93,9 @@ public:
 		return false;
 	}
 	int64_t GetFileSize(FileHandle &handle) override;
-	time_t GetLastModifiedTime(FileHandle &handle) override;
+	timestamp_t GetLastModifiedTime(FileHandle &handle) override;
 	void Seek(FileHandle &handle, idx_t location) override;
+	idx_t SeekPosition(FileHandle &handle) override;
 	void FileSync(FileHandle &handle) override;
 
 	bool LoadFileInfo(AzureFileHandle &handle);
@@ -125,7 +126,7 @@ protected:
 	static AzureReadOptions ParseAzureReadOptions(optional_ptr<FileOpener> opener);
 
 public:
-	static time_t ToTimeT(const Azure::DateTime &dt);
+	static timestamp_t ToTimestamp(const Azure::DateTime &dt);
 };
 
 } // namespace duckdb
