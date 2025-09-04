@@ -43,7 +43,7 @@ jobs:
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11.1
       with:
-        vcpkgGitCommitId: 5e5d0e1cd7785623065e77eff011afdeec1a3574
+        vcpkgGitCommitId: b1b19307e2d2ec1eefbdb7ea069de7d4bcd31f01
 
     # Build extension
     - name: Build extension
@@ -107,7 +107,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 5e5d0e1cd7785623065e77eff011afdeec1a3574
+          vcpkgGitCommitId: b1b19307e2d2ec1eefbdb7ea069de7d4bcd31f01
 
       - name: Build extension
         shell: bash
@@ -158,7 +158,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 5e5d0e1cd7785623065e77eff011afdeec1a3574
+          vcpkgGitCommitId: b1b19307e2d2ec1eefbdb7ea069de7d4bcd31f01
 
       - uses: actions/setup-python@v2
         with:
