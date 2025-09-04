@@ -107,7 +107,7 @@ void AzureStorageFileSystem::Seek(FileHandle &handle, idx_t location) {
 
 idx_t AzureStorageFileSystem::SeekPosition(FileHandle &handle) {
 	auto &afh = handle.Cast<AzureFileHandle>();
-	return afh.SeekPosition();
+	return afh.file_offset;
 }
 
 void AzureStorageFileSystem::FileSync(FileHandle &handle) {
