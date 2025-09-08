@@ -1,9 +1,11 @@
 #include "azure_secret.hpp"
+
 #include "azure_dfs_filesystem.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/unique_ptr.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/secret/secret.hpp"
+
 #include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
 #include <azure/identity/default_azure_credential.hpp>
@@ -74,6 +76,31 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 
 	// Manage specific secret option
 	CopySecret("chain", input, *result);
+
+	// Redact sensible keys
+	RedactCommonKeys(*result);
+
+	return std::move(result);
+}
+
+static unique_ptr<BaseSecret> CreateAzureSecretFromManagedIdentity(ClientContext &context, CreateSecretInput &input) {
+	auto scope = input.scope;
+	if (scope.empty()) {
+		scope.push_back("azure://");
+		scope.push_back("az://");
+		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+		scope.push_back(AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX);
+	}
+
+	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
+
+	// Manage common option that all secret type share
+	for (const auto *key : COMMON_OPTIONS) {
+		CopySecret(key, input, *result);
+	}
+
+	// Manage specific secret option
+	CopySecret("client_id", input, *result);
 
 	// Redact sensible keys
 	RedactCommonKeys(*result);
@@ -169,6 +196,12 @@ void CreateAzureSecretFunctions::Register(ExtensionLoader &loader) {
 	cred_chain_function.named_parameters["chain"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(cred_chain_function);
 	loader.RegisterFunction(cred_chain_function);
+
+	// Register the managed identity secret provider
+	CreateSecretFunction managed_identity_function = {type, "managed_identity", CreateAzureSecretFromManagedIdentity};
+	managed_identity_function.named_parameters["client_id"] = LogicalType::VARCHAR;
+	RegisterCommonSecretParameters(managed_identity_function);
+	loader.RegisterFunction(managed_identity_function);
 
 	// Register the service_principal secret provider
 	CreateSecretFunction service_principal_function = {type, "service_principal",

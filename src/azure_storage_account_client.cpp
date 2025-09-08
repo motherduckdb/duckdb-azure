@@ -1,14 +1,11 @@
 #include "azure_storage_account_client.hpp"
 
 #include "duckdb/catalog/catalog_transaction.hpp"
-#include "duckdb/common/enums/statement_type.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/shared_ptr.hpp"
-#include "duckdb/common/helper.hpp"
 #include "duckdb/common/file_opener.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/main/client_context.hpp"
-#include "duckdb/main/database.hpp"
 #include "duckdb/main/secret/secret.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "http_state_policy.hpp"
@@ -25,10 +22,8 @@
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_service_client.hpp>
-
 #include <azure/storage/files/datalake/datalake_options.hpp>
 #include <azure/storage/files/datalake/datalake_service_client.hpp>
-#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -417,6 +412,24 @@ GetDfsStorageAccountClientFromCredentialChainProvider(optional_ptr<FileOpener> o
 }
 
 static Azure::Storage::Blobs::BlobServiceClient
+GetBlobStorageAccountClientFromManagedIdentityProvider(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
+                                                       const AzureParsedUrl &azure_parsed_url) {
+	auto transport_options = GetTransportOptions(opener, secret);
+	auto credential_options = ToTokenCredentialOptions(transport_options);
+	auto client_id = secret.TryGetValue("client_id");
+	auto mi_credential =
+	    client_id.IsNull()
+	        ? std::make_shared<Azure::Identity::ManagedIdentityCredential>(credential_options)
+	        : std::make_shared<Azure::Identity::ManagedIdentityCredential>(client_id.ToString(), credential_options);
+
+	// Connect to storage account
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_BLOB_ENDPOINT);
+	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
+	return Azure::Storage::Blobs::BlobServiceClient(account_url, mi_credential, blob_options);
+}
+
+static Azure::Storage::Blobs::BlobServiceClient
 GetBlobStorageAccountClientFromServicePrincipalProvider(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
                                                         const AzureParsedUrl &azure_parsed_url) {
 	auto transport_options = GetTransportOptions(opener, secret);
@@ -477,6 +490,8 @@ static Azure::Storage::Blobs::BlobServiceClient GetBlobStorageAccountClient(opti
 		return GetBlobStorageAccountClientFromConfigProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "credential_chain") {
 		return GetBlobStorageAccountClientFromCredentialChainProvider(opener, secret, azure_parsed_url);
+	} else if (provider == "managed_identity") {
+		return GetBlobStorageAccountClientFromManagedIdentityProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "service_principal") {
 		return GetBlobStorageAccountClientFromServicePrincipalProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "access_token") {
