@@ -12,6 +12,7 @@
 
 #include <azure/core/credentials/token_credential_options.hpp>
 #include <azure/core/http/curl_transport.hpp>
+#include <azure/core/resource_identifier.hpp>
 #include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
 #include <azure/identity/client_certificate_credential.hpp>
@@ -414,19 +415,41 @@ GetDfsStorageAccountClientFromCredentialChainProvider(optional_ptr<FileOpener> o
 static Azure::Storage::Blobs::BlobServiceClient
 GetBlobStorageAccountClientFromManagedIdentityProvider(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
                                                        const AzureParsedUrl &azure_parsed_url) {
-	auto transport_options = GetTransportOptions(opener, secret);
-	auto credential_options = ToTokenCredentialOptions(transport_options);
-	auto client_id = secret.TryGetValue("client_id");
-	auto mi_credential =
-	    client_id.IsNull()
-	        ? std::make_shared<Azure::Identity::ManagedIdentityCredential>(credential_options)
-	        : std::make_shared<Azure::Identity::ManagedIdentityCredential>(client_id.ToString(), credential_options);
+	using namespace Azure::Identity;
 
+	ManagedIdentityCredentialOptions mi_cred_options;
+	auto transport_options = GetTransportOptions(opener, secret);
+	mi_cred_options.Transport = GetTransportOptions(opener, secret);
+
+	auto client_id = secret.TryGetValue("client_id");
+	auto object_id = secret.TryGetValue("object_id");
+	auto resource_id = secret.TryGetValue("resource_id");
+
+	// check that max 1 of client, object or resource ID is specified
+	auto id_count = int(!client_id.IsNull()) + int(!object_id.IsNull()) + int(!resource_id.IsNull());
+	if (id_count > 1) {
+		throw InvalidInputException(
+		    "Only 1 of client_id, object_id, or resource_id, may be specified with provider managed_identity");
+	}
+
+	// https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#managed-identity-support
+	if (!client_id.IsNull()) {
+		mi_cred_options.IdentityId = ManagedIdentityId::FromUserAssignedClientId(client_id.ToString());
+	}
+	if (!object_id.IsNull()) {
+		mi_cred_options.IdentityId = ManagedIdentityId::FromUserAssignedObjectId(object_id.ToString());
+	}
+	if (!resource_id.IsNull()) {
+		mi_cred_options.IdentityId =
+		    ManagedIdentityId::FromUserAssignedResourceId(Azure::Core::ResourceIdentifier(resource_id.ToString()));
+	}
+
+	auto mi_cred = std::make_shared<ManagedIdentityCredential>(mi_cred_options);
 	// Connect to storage account
 	auto account_url =
 	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_BLOB_ENDPOINT);
 	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
-	return Azure::Storage::Blobs::BlobServiceClient(account_url, mi_credential, blob_options);
+	return Azure::Storage::Blobs::BlobServiceClient(account_url, mi_cred, blob_options);
 }
 
 static Azure::Storage::Blobs::BlobServiceClient
