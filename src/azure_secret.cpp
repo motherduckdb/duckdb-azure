@@ -99,8 +99,10 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromManagedIdentity(ClientContext
 		CopySecret(key, input, *result);
 	}
 
-	// Manage specific secret option
+	// Manage specific secret options
 	CopySecret("client_id", input, *result);
+	CopySecret("object_id", input, *result);
+	CopySecret("resource_id", input, *result);
 
 	// Redact sensible keys
 	RedactCommonKeys(*result);
@@ -200,6 +202,8 @@ void CreateAzureSecretFunctions::Register(ExtensionLoader &loader) {
 	// Register the managed identity secret provider
 	CreateSecretFunction managed_identity_function = {type, "managed_identity", CreateAzureSecretFromManagedIdentity};
 	managed_identity_function.named_parameters["client_id"] = LogicalType::VARCHAR;
+	managed_identity_function.named_parameters["object_id"] = LogicalType::VARCHAR;
+	managed_identity_function.named_parameters["resource_id"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(managed_identity_function);
 	loader.RegisterFunction(managed_identity_function);
 

@@ -79,13 +79,13 @@ CREATE SECRET secret5 (
 );
 ```
 
-## Managed Identity with User-assigned ID (UAMI)
+### Managed Identity with User-assigned ID (UAMI)
 
 ```sql
 CREATE SECRET secret1 (
     TYPE AZURE,
-    PROVIDER managed_identity,
-    ACCOUNT_NAME '⟨storage account name⟩'
+    PROVIDER MANAGED_IDENTITY,
+    ACCOUNT_NAME '⟨storage account name⟩',
     CLIENT_ID '⟨used-assigned managed identity client id⟩'
 );
 ```
@@ -93,6 +93,9 @@ CREATE SECRET secret1 (
 `CLIENT_ID` is optional; if not specified, the Azure SDK will attempt to find and use either a
 System-assigned Managed Identity (SAMI) or User-assigned Managed Identity (UAMI). If both are
 defined, or more than 1 UAMI is available, order and behavior is undefined.
+
+Alternatively, `OBJECT_ID` or `RESOURCE_ID` may be used instead of `CLIENT_ID`. Only 1 of these
+IDs may be specified.
 
 See also [Azure Identity Managed Identity Support](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#managed-identity-support)
 
