@@ -125,6 +125,16 @@ bool AzureDfsStorageFileSystem::CanHandleFile(const string &fpath) {
 	return IsDfsScheme(fpath);
 }
 
+bool AzureDfsStorageFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
+	try {
+		auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
+		auto &sfh = handle->Cast<AzureDfsStorageFileHandle>();
+		return sfh.length >= 0; // avoid optimizers and shenanigans -- deref the handle to be sure
+	} catch (...) {
+		return false;
+	};
+}
+
 vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *opener) {
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage Glob without FileOpener");
