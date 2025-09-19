@@ -126,13 +126,12 @@ bool AzureDfsStorageFileSystem::CanHandleFile(const string &fpath) {
 }
 
 bool AzureDfsStorageFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
-	try {
-		auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
-		auto &sfh = handle->Cast<AzureDfsStorageFileHandle>();
-		return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
-	} catch (...) {
-		return false;
-	};
+  auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
+  if (handle != nullptr) {
+    auto &sfh = handle->Cast<AzureDfsStorageFileHandle>();
+    return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
+  }
+  return false;
 }
 
 vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *opener) {

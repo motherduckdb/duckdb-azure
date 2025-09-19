@@ -179,13 +179,12 @@ void AzureBlobStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 }
 
 bool AzureBlobStorageFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
-	try {
-		auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
-		auto &sfh = handle->Cast<AzureBlobStorageFileHandle>();
-		return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
-	} catch (...) {
-		return false;
-	};
+  auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
+  if (handle != nullptr) {
+    auto &sfh = handle->Cast<AzureBlobStorageFileHandle>();
+    return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
+  }
+  return false;
 }
 
 void AzureBlobStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out,
