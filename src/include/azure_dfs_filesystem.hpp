@@ -4,6 +4,7 @@
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/unique_ptr.hpp"
+
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/storage/files/datalake/datalake_file_system_client.hpp>
 #include <azure/storage/files/datalake/datalake_service_client.hpp>
@@ -44,6 +45,8 @@ public:
 	string GetName() const override {
 		return "AzureDfsStorageFileSystem";
 	}
+
+	bool FileExists(const string &filename, optional_ptr<FileOpener> opener) override;
 
 	// From AzureFilesystem
 	void LoadRemoteFileInfo(AzureFileHandle &handle) override;
