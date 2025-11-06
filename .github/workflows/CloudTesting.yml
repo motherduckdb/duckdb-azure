@@ -1,8 +1,8 @@
 name: Azure (cloud) functional tests
 on: 
   push:
-    # XXX: remove update-* below once ready to land
-    branches: [main,update-test-account-and-auth]
+    # XXX: limit to below once ready to land
+    # branches: [main]
   repository_dispatch:
 
 concurrency:
