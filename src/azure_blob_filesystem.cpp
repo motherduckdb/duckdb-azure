@@ -151,8 +151,8 @@ vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOp
 				info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
 				auto &options = info.extended_info->options;
 				options.emplace("file_size", Value::BIGINT(key.BlobSize));
-				options.emplace("last_modified", Value::TIMESTAMP(
-				                                     AzureStorageFileSystem::ToTimestamp(key.Details.LastModified)));
+				options.emplace("last_modified",
+				                Value::TIMESTAMP(AzureStorageFileSystem::ToTimestamp(key.Details.LastModified)));
 				result.push_back(info);
 			}
 		}
@@ -179,12 +179,12 @@ void AzureBlobStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 }
 
 bool AzureBlobStorageFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
-  auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
-  if (handle != nullptr) {
-    auto &sfh = handle->Cast<AzureBlobStorageFileHandle>();
-    return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
-  }
-  return false;
+	auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
+	if (handle != nullptr) {
+		auto &sfh = handle->Cast<AzureBlobStorageFileHandle>();
+		return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
+	}
+	return false;
 }
 
 void AzureBlobStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out,
