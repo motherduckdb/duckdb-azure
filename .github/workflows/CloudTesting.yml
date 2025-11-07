@@ -1,8 +1,7 @@
 name: Azure (cloud) functional tests
 on: 
   push:
-    # XXX: limit to below once ready to land
-    # branches: [main]
+    branches: [main]
   repository_dispatch:
 
 concurrency:
@@ -106,9 +105,3 @@ jobs:
         run: |
           ./build/release/duckdb -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE,PROVIDER SERVICE_PRINCIPAL, TENANT_ID '${{secrets.AZURE_TENANT_ID}}', CLIENT_ID '${{secrets.AZURE_CLIENT_ID}}', CLIENT_SECRET '${{secrets.AZURE_CLIENT_SECRET}}',ACCOUNT_NAME '${{secrets.AZURE_STORAGE_ACCOUNT}}')"
           DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 ./build/release/test/unittest "test/sql/test_data_integrity.test"
-
-      # XXX: debugging only, remove
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        if: ${{ failure() }}
-        #with: { detached: true }
