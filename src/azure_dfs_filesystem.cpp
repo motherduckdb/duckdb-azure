@@ -67,8 +67,8 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 					info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
 					auto &options = info.extended_info->options;
 					options.emplace("file_size", Value::BIGINT(elt.FileSize));
-					options.emplace("last_modified", Value::TIMESTAMP(
-					                                     AzureStorageFileSystem::ToTimestamp(elt.LastModified)));
+					options.emplace("last_modified",
+					                Value::TIMESTAMP(AzureStorageFileSystem::ToTimestamp(elt.LastModified)));
 					out_result->push_back(info);
 				}
 			}
@@ -126,12 +126,12 @@ bool AzureDfsStorageFileSystem::CanHandleFile(const string &fpath) {
 }
 
 bool AzureDfsStorageFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
-  auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
-  if (handle != nullptr) {
-    auto &sfh = handle->Cast<AzureDfsStorageFileHandle>();
-    return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
-  }
-  return false;
+	auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
+	if (handle != nullptr) {
+		auto &sfh = handle->Cast<AzureDfsStorageFileHandle>();
+		return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
+	}
+	return false;
 }
 
 vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *opener) {

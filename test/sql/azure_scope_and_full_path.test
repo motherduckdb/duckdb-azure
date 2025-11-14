@@ -1,6 +1,6 @@
 # name: test/sql/azure_scope_and_full_path.test
 # description: test azure extension scope definition and full path definition
-# group: [azure]
+# group: [sql]
 
 require azure
 
