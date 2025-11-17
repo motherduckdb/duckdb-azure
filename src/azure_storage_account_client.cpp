@@ -412,14 +412,12 @@ GetDfsStorageAccountClientFromCredentialChainProvider(optional_ptr<FileOpener> o
 	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, std::move(credential), dfs_options);
 }
 
-static Azure::Storage::Blobs::BlobServiceClient
-GetBlobStorageAccountClientFromManagedIdentityProvider(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
-                                                       const AzureParsedUrl &azure_parsed_url) {
+static std::shared_ptr<Azure::Identity::ManagedIdentityCredential>
+GetManagedIdentityCredential(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
+                             const Azure::Core::Http::Policies::TransportOptions &tp_opts) {
 	using namespace Azure::Identity;
 
 	ManagedIdentityCredentialOptions mi_cred_options;
-	auto transport_options = GetTransportOptions(opener, secret);
-	mi_cred_options.Transport = GetTransportOptions(opener, secret);
 
 	auto client_id = secret.TryGetValue("client_id");
 	auto object_id = secret.TryGetValue("object_id");
@@ -444,12 +442,32 @@ GetBlobStorageAccountClientFromManagedIdentityProvider(optional_ptr<FileOpener> 
 		    ManagedIdentityId::FromUserAssignedResourceId(Azure::Core::ResourceIdentifier(resource_id.ToString()));
 	}
 
-	auto mi_cred = std::make_shared<ManagedIdentityCredential>(mi_cred_options);
-	// Connect to storage account
+	return std::make_shared<ManagedIdentityCredential>(mi_cred_options);
+}
+
+static Azure::Storage::Blobs::BlobServiceClient
+GetBlobStorageAccountClientFromManagedIdentityProvider(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
+                                                       const AzureParsedUrl &azure_parsed_url) {
+	// Connect to (blob) storage account
+	auto transport_options = GetTransportOptions(opener, secret);
+	auto mi_cred = GetManagedIdentityCredential(opener, secret, transport_options);
 	auto account_url =
 	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_BLOB_ENDPOINT);
 	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, mi_cred, blob_options);
+}
+
+static Azure::Storage::Files::DataLake::DataLakeServiceClient
+GetDfsStorageAccountClientFromManagedIdentityProvider(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
+                                                      const AzureParsedUrl &azure_parsed_url) {
+	auto transport_options = GetTransportOptions(opener, secret);
+	auto mi_cred = GetManagedIdentityCredential(opener, secret, transport_options);
+
+	// Connect to ADLS storage account
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_DFS_ENDPOINT);
+	auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
+	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, mi_cred, dfs_options);
 }
 
 static Azure::Storage::Blobs::BlobServiceClient
@@ -533,6 +551,8 @@ GetDfsStorageAccountClient(optional_ptr<FileOpener> opener, const KeyValueSecret
 		return GetDfsStorageAccountClientFromConfigProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "credential_chain") {
 		return GetDfsStorageAccountClientFromCredentialChainProvider(opener, secret, azure_parsed_url);
+	} else if (provider == "managed_identity") {
+		return GetDfsStorageAccountClientFromManagedIdentityProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "service_principal") {
 		return GetDfsStorageAccountClientFromServicePrincipalProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "access_token") {
