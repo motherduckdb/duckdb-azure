@@ -59,6 +59,9 @@ bool AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
 	    handle.flags.ReturnNullIfExists()) {
 		try {
 			LoadRemoteFileInfo(handle);
+			if (handle.flags.ReturnNullIfExists()) {
+				return false;
+			}
 		} catch (const Azure::Storage::StorageException &e) {
 			auto status_code = int(e.StatusCode);
 			if ((status_code == 200) && handle.flags.ReturnNullIfExists()) {

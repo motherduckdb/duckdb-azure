@@ -1,15 +1,17 @@
 #include "azure_dfs_filesystem.hpp"
+
 #include "azure_storage_account_client.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/helper.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/function/scalar/string_common.hpp"
+
 #include <algorithm>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/common/storage_exception.hpp>
-#include <azure/storage/files/datalake/datalake_file_system_client.hpp>
 #include <azure/storage/files/datalake/datalake_directory_client.hpp>
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
+#include <azure/storage/files/datalake/datalake_file_system_client.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
 #include <azure/storage/files/datalake/datalake_responses.hpp>
 #include <cstddef>
@@ -97,7 +99,7 @@ AzureDfsContextState::GetDfsFileSystemClient(const std::string &file_system_name
 AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, const OpenFileInfo &info,
                                                      FileOpenFlags flags, const AzureReadOptions &read_options,
                                                      Azure::Storage::Files::DataLake::DataLakeFileClient client)
-    : AzureFileHandle(fs, info, flags, read_options), file_client(std::move(client)) {
+    : AzureFileHandle(fs, info, flags, read_options), file_client(std::move(client)), is_directory(false) {
 }
 
 //////// AzureDfsStorageFileSystem ////////
@@ -135,13 +137,18 @@ bool AzureDfsStorageFileSystem::CanHandleFile(const string &fpath) {
 	return IsDfsScheme(fpath);
 }
 
+bool AzureDfsStorageFileSystem::DirectoryExists(const string &dirname, optional_ptr<FileOpener> opener) {
+	auto handle = OpenFile(dirname, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
+	return handle && handle->Cast<AzureDfsStorageFileHandle>().is_directory;
+}
+
+void AzureDfsStorageFileSystem::CreateDirectory(const string &directory, optional_ptr<FileOpener> opener) {
+	throw NotImplementedException("Unsupported in Azure ADLSv2: CreateDirectory");
+}
+
 bool AzureDfsStorageFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
 	auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
-	if (handle != nullptr) {
-		auto &sfh = handle->Cast<AzureDfsStorageFileHandle>();
-		return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
-	}
-	return false;
+	return handle && !handle->Cast<AzureDfsStorageFileHandle>().is_directory;
 }
 
 vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *opener) {
@@ -154,7 +161,11 @@ vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpe
 	// If path does not contains any wildcard, we assume that an absolute path therefor nothing to do
 	auto first_wildcard_pos = azure_url.path.find_first_of("*[\\");
 	if (first_wildcard_pos == string::npos) {
-		return {path};
+		vector<OpenFileInfo> rv;
+		if (FileExists(path, opener)) {
+			rv.emplace_back(path);
+		}
+		return rv;
 	}
 
 	// The path contains wildcard try to list file with the minimum calls
@@ -189,13 +200,16 @@ vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpe
 }
 
 void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
-	auto &hfh = handle.Cast<AzureDfsStorageFileHandle>();
+	auto &afh = handle.Cast<AzureDfsStorageFileHandle>();
 
-	if (hfh.length == 0 && hfh.last_modified == timestamp_t(0)) {
-		auto res = hfh.file_client.GetProperties();
-		hfh.length = res.Value.FileSize;
-		hfh.last_modified = ToTimestamp(res.Value.LastModified);
+	if (afh.IsRemoteLoaded()) {
+		return;
 	}
+
+	auto res = afh.file_client.GetProperties();
+	afh.length = res.Value.FileSize;
+	afh.last_modified = ToTimestamp(res.Value.LastModified);
+	afh.is_directory = res.Value.IsDirectory;
 }
 
 void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out,
