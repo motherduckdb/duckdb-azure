@@ -3,6 +3,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types/value.hpp"
+#include "duckdb/logging/file_system_logger.hpp"
 #include "duckdb/main/client_context.hpp"
 
 #include <azure/storage/common/storage_exception.hpp>
@@ -25,7 +26,7 @@ AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo 
                                  const AzureReadOptions &read_options)
     : FileHandle(fs, info.path, flags), flags(flags),
       // File info
-      length(0), last_modified(0),
+      is_remote_loaded(false), length(0), last_modified(0),
       // Read info
       buffer_available(0), buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0),
       // Options
@@ -52,16 +53,22 @@ bool AzureFileHandle::PostConstruct() {
 }
 
 bool AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
-	if (handle.flags.OpenForReading()) {
+	// Reads & Appends need size/offset, and any existence check needs a remote
+	// Pure (unflagged) writes do not, since they create/reset metadata, so we save the RTT
+	if (handle.flags.OpenForReading() || handle.flags.OpenForAppending() || handle.flags.ReturnNullIfNotExists() ||
+	    handle.flags.ReturnNullIfExists()) {
 		try {
 			LoadRemoteFileInfo(handle);
 		} catch (const Azure::Storage::StorageException &e) {
 			auto status_code = int(e.StatusCode);
+			if ((status_code == 200) && handle.flags.ReturnNullIfExists()) {
+				return false;
+			}
 			if (status_code == 404 && handle.flags.ReturnNullIfNotExists()) {
 				return false;
 			}
 			throw IOException(
-			    "AzureBlobStorageFileSystem open file '%s' failed with code'%s', Reason Phrase: '%s', Message: '%s'",
+			    "AzureBlobStorageFileSystem open file '%s' failed with code '%s', Reason Phrase: '%s', Message: '%s'",
 			    handle.path, e.ErrorCode, e.ReasonPhrase, e.Message);
 		} catch (const std::exception &e) {
 			throw IOException(
@@ -75,13 +82,11 @@ bool AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
 
 unique_ptr<FileHandle> AzureStorageFileSystem::OpenFileExtended(const OpenFileInfo &info, FileOpenFlags flags,
                                                                 optional_ptr<FileOpener> opener) {
-	D_ASSERT(flags.Compression() == FileCompressionType::UNCOMPRESSED);
-
-	if (flags.OpenForWriting()) {
-		throw NotImplementedException("Writing to Azure containers is currently not supported");
-	}
-
 	auto handle = CreateHandle(info, flags, opener);
+	if (handle && opener) {
+		handle->TryAddLogger(*opener);
+		DUCKDB_LOG_FILE_SYSTEM_OPEN((*handle));
+	}
 	return std::move(handle);
 }
 
@@ -110,10 +115,6 @@ idx_t AzureStorageFileSystem::SeekPosition(FileHandle &handle) {
 	return afh.file_offset;
 }
 
-void AzureStorageFileSystem::FileSync(FileHandle &handle) {
-	throw NotImplementedException("FileSync for Azure Storage files not implemented");
-}
-
 // TODO: this code is identical to HTTPFS, look into unifying it
 void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
 	auto &hfh = handle.Cast<AzureFileHandle>();
@@ -124,12 +125,14 @@ void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_b
 	// Don't buffer when DirectIO is set.
 	if (hfh.flags.DirectIO() || hfh.flags.RequireParallelAccess()) {
 		if (to_read == 0) {
+			DUCKDB_LOG_FILE_SYSTEM_READ(handle, nr_bytes, location);
 			return;
 		}
 		ReadRange(hfh, location, (char *)buffer, to_read);
 		hfh.buffer_available = 0;
 		hfh.buffer_idx = 0;
 		hfh.file_offset = location + nr_bytes;
+		DUCKDB_LOG_FILE_SYSTEM_READ(handle, nr_bytes, location);
 		return;
 	}
 
@@ -176,6 +179,7 @@ void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_b
 			}
 		}
 	}
+	DUCKDB_LOG_FILE_SYSTEM_READ(handle, nr_bytes, location);
 }
 
 int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {
@@ -183,6 +187,7 @@ int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t n
 	idx_t max_read = hfh.length - hfh.file_offset;
 	nr_bytes = MinValue<idx_t>(max_read, nr_bytes);
 	Read(handle, buffer, nr_bytes, hfh.file_offset);
+	// LOG handled in Read()
 	return nr_bytes;
 }
 

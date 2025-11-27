@@ -1,0 +1,47 @@
+# name: test/sql/fs_logs.test
+# description: This test triggers the http prefetch mechanism.
+# group: [sql]
+
+require azure
+
+require parquet
+
+require-env AZURE_STORAGE_CONNECTION_STRING
+
+statement ok
+CALL enable_logging('FileSystem', level='trace');
+
+# Set connection string from env var
+statement ok
+CREATE SECRET s1 (
+    TYPE AZURE,
+    CONNECTION_STRING '${AZURE_STORAGE_CONNECTION_STRING}'
+)
+
+# Read a column from a parquet file
+query I
+SELECT sum(l_orderkey) FROM 'az://testing-private/l.parquet';
+----
+1802759573
+
+query III sort
+SELECT
+	count(DISTINCT connection_id), 
+	count(DISTINCT transaction_id),
+	count(DISTINCT query_id)
+FROM duckdb_logs_parsed('FileSystem') 
+WHERE path = 'az://testing-private/l.parquet';
+----
+1	1	1
+
+# TODO: both open and read are 2x; investigate
+query II sort
+SELECT op, count(op)
+	FROM duckdb_logs_parsed('FileSystem') 
+	WHERE path = 'az://testing-private/l.parquet'
+	GROUP BY op;
+----
+OPEN	2
+READ	2
+
+
