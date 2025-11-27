@@ -1,5 +1,6 @@
 #include "azure_blob_filesystem.hpp"
 
+#include "azure_http_state.hpp"
 #include "azure_storage_account_client.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_opener.hpp"
@@ -115,7 +116,11 @@ vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOp
 	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
 	auto first_wildcard_pos = azure_url.path.find_first_of("*[\\");
 	if (first_wildcard_pos == string::npos) {
-		return {path};
+		vector<OpenFileInfo> rv;
+		if (FileExists(path, opener)) {
+			rv.emplace_back(path);
+		}
+		return rv;
 	}
 
 	string shared_path = azure_url.path.substr(0, first_wildcard_pos);
@@ -137,8 +142,8 @@ vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOp
 		try {
 			res = container_client.ListBlobs(options);
 		} catch (Azure::Storage::StorageException &e) {
-			throw IOException("AzureStorageFileSystem Read to %s failed with %s Reason Phrase: %s", path, e.ErrorCode,
-			                  e.ReasonPhrase);
+			throw IOException("AzureBlobStorageFileSystem Read to %s failed with %s Reason Phrase: %s", path,
+			                  e.ErrorCode, e.ReasonPhrase);
 		}
 
 		// Assuming that in the majority of the case it's wildcard
@@ -155,8 +160,7 @@ vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOp
 				info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
 				auto &options = info.extended_info->options;
 				options.emplace("file_size", Value::BIGINT(key.BlobSize));
-				options.emplace("last_modified",
-				                Value::TIMESTAMP(AzureStorageFileSystem::ToTimestamp(key.Details.LastModified)));
+				options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(key.Details.LastModified)));
 				result.push_back(info);
 			}
 		}
@@ -198,8 +202,7 @@ bool AzureBlobStorageFileSystem::ListFilesExtended(const string &path_in,
 			info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
 			auto &options = info.extended_info->options;
 			options.emplace("file_size", Value::BIGINT(blob.BlobSize));
-			options.emplace("last_modified",
-			                Value::TIMESTAMP(AzureStorageFileSystem::ToTimestamp(blob.Details.LastModified)));
+			options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(blob.Details.LastModified)));
 			// NOTE: there's a LOT of metadata available, and tags, etc. -- see
 			// https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-blobs/inc/azure/storage/blobs/rest_client.hpp#L1134
 			// (struct BlobItemDetails) and
@@ -221,6 +224,31 @@ void AzureBlobStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	afh.length = res.Value.BlobSize;
 	afh.last_modified = ToTimestamp(res.Value.LastModified);
 	afh.is_remote_loaded = true;
+}
+
+bool AzureBlobStorageFileSystem::DirectoryExists(const string &dirname, optional_ptr<FileOpener> opener) {
+	// NOTE: existance of directory makes no sense in Blob -- since the concept isn't present.
+	// That said we fake it -- if glob(dir/*) returns anything at all, say it exists, otherwise not.
+	// If we want to, could add an option to behave in this, way, always return true or even always false.
+	if (opener == nullptr) {
+		throw InternalException("Cannot do Azure storage directory test without FileOpener");
+	}
+	// auto handle = OpenFile(dirname, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
+	auto dir_slashed = dirname[dirname.length() - 1] == '/' ? dirname : (dirname + '/');
+	auto dir_url = ParseUrl(dir_slashed);
+	auto storage_context = GetOrCreateStorageContext(opener, dirname, dir_url);
+	auto container_client = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(dir_url.container);
+
+	Azure::Storage::Blobs::ListBlobsOptions options;
+	options.Prefix = dir_url.path;
+	Azure::Storage::Blobs::ListBlobsPagedResponse res;
+	try {
+		res = container_client.ListBlobs(options);
+	} catch (Azure::Storage::StorageException &e) {
+		throw IOException("AzureBlobStorageFileSystem Read to %s failed with %s Reason Phrase: %s", dir_slashed,
+		                  e.ErrorCode, e.ReasonPhrase);
+	}
+	return !res.Blobs.empty();
 }
 
 bool AzureBlobStorageFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {

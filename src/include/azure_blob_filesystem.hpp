@@ -45,14 +45,11 @@ public:
 	}
 
 	// FS methods
-	bool FileExists(const string &filename, optional_ptr<FileOpener> opener = nullptr) override;
-
-	//! Blob is object storage so directories effectively always exist
-	bool DirectoryExists(const string &directory, optional_ptr<FileOpener> opener = nullptr) override {
-		return true;
-	}
-
 	bool CanHandleFile(const string &fpath) override;
+	void CreateDirectory(const string &directory, optional_ptr<FileOpener> opener = nullptr) override {
+	}
+	bool DirectoryExists(const string &dirname, optional_ptr<FileOpener> opener) override;
+	bool FileExists(const string &filename, optional_ptr<FileOpener> opener = nullptr) override;
 	string GetName() const override {
 		return "AzureBlobStorageFileSystem";
 	}

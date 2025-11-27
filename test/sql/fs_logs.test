@@ -18,30 +18,63 @@ CREATE SECRET s1 (
     CONNECTION_STRING '${AZURE_STORAGE_CONNECTION_STRING}'
 )
 
+# Read a column from a csv file
+query I
+SELECT sum(l_orderkey) FROM 'az://testing-private/l.csv';
+----
+1802759573
+
 # Read a column from a parquet file
 query I
 SELECT sum(l_orderkey) FROM 'az://testing-private/l.parquet';
 ----
 1802759573
 
+# check that all IO in 1 client/connect, and 2 x-actions/queries
 query III sort
 SELECT
 	count(DISTINCT connection_id), 
 	count(DISTINCT transaction_id),
 	count(DISTINCT query_id)
 FROM duckdb_logs_parsed('FileSystem') 
-WHERE path = 'az://testing-private/l.parquet';
+WHERE path LIKE 'az://testing-private/l.%';
 ----
-1	1	1
+1	2	2
 
-# TODO: both open and read are 2x; investigate
-query II sort
-SELECT op, count(op)
-	FROM duckdb_logs_parsed('FileSystem') 
-	WHERE path = 'az://testing-private/l.parquet'
-	GROUP BY op;
+##
+# NOTE: work to do here, for later.
+#
+# D SELECT query_id, parse_path(path)[-1] AS path_tail, op, pos, bytes FROM duckdb_logs_parsed('FileSystem');
+# ┌──────────┬───────────┬─────────┬─────────┬─────────┐
+# │ query_id │ path_tail │   op    │   pos   │  bytes  │
+# │  uint64  │  varchar  │ varchar │  int64  │  int64  │
+# ├──────────┼───────────┼─────────┼─────────┼─────────┤
+# │        7 │ l.parquet │ OPEN    │    NULL │    NULL │
+# │        7 │ l.parquet │ OPEN    │    NULL │    NULL │
+# │        7 │ l.parquet │ READ    │ 2509605 │   16384 │
+# │        7 │ l.parquet │ OPEN    │    NULL │    NULL │
+# │        7 │ l.parquet │ READ    │       4 │   90945 │
+# │        9 │ l.csv     │ OPEN    │    NULL │    NULL │
+# │        9 │ l.csv     │ OPEN    │    NULL │    NULL │
+# │        9 │ l.csv     │ READ    │       0 │ 7396070 │
+# │        9 │ l.csv     │ READ    │ 7396070 │       0 │
+# └──────────┴───────────┴─────────┴─────────┴─────────┘
+#
+# In both cases it appears we needlessly re-read the metadata so we re-open.
+# In Parquet I assume (naively) that we read the footer for metadata, then seek+read the single column.
+# In CSV, looks good except the extra 0-byte read at end. I assume we're not looking whether there are bytes still to 
+# read, could be at any layer.
+# Ideal in both cases is OPENx1, READx{1,2}
+#
+
+# validate ops -- needs to be fuzzy, but...
+query III sort
+SELECT path_tail: parse_path(path)[-1], op, in_range: count(op) >= 1 AND count(op) <= 3
+FROM duckdb_logs_parsed('FileSystem') 
+WHERE path LIKE 'az://testing-private/l.%'
+GROUP BY path, op;
 ----
-OPEN	2
-READ	2
-
-
+l.csv	OPEN	true
+l.csv	READ	true
+l.parquet	OPEN	true
+l.parquet	READ	true

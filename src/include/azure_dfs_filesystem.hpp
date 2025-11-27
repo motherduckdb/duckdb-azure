@@ -35,6 +35,7 @@ public:
 
 public:
 	Azure::Storage::Files::DataLake::DataLakeFileClient file_client;
+	bool is_directory;
 };
 
 class AzureDfsStorageFileSystem : public AzureStorageFileSystem {
@@ -42,11 +43,12 @@ public:
 	vector<OpenFileInfo> Glob(const string &path, FileOpener *opener = nullptr) override;
 
 	bool CanHandleFile(const string &fpath) override;
+	void CreateDirectory(const string &directory, optional_ptr<FileOpener> opener = nullptr) override;
+	bool DirectoryExists(const string &filename, optional_ptr<FileOpener> opener) override;
+	bool FileExists(const string &filename, optional_ptr<FileOpener> opener) override;
 	string GetName() const override {
 		return "AzureDfsStorageFileSystem";
 	}
-
-	bool FileExists(const string &filename, optional_ptr<FileOpener> opener) override;
 
 	// From AzureFilesystem
 	void LoadRemoteFileInfo(AzureFileHandle &handle) override;
