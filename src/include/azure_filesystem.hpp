@@ -59,8 +59,12 @@ public:
 		return is_remote_loaded;
 	}
 
+	FileType GetType() {
+		return file_type;
+	}
+
 protected:
-	AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
+	AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags, FileType file_type,
 	                const AzureReadOptions &read_options);
 
 public:
@@ -68,6 +72,7 @@ public:
 
 	// File info
 	bool is_remote_loaded;
+	FileType file_type;
 	idx_t length;
 	timestamp_t last_modified;
 

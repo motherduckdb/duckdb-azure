@@ -12,6 +12,7 @@ test/python/__pycache__/
 __blobstorage__/
 __queuestorage__/
 __azurite_db_*__.json
+/azurite/
 
 # squid
 /squid*

@@ -39,7 +39,7 @@ container does not exist
 statement error
 INSTALL 'abfss://invalid-container/dir/ext.duckdb_extension';
 ----
-Cannot identify the storage account
+container does not exist
 
 
 # NOTE: now test actual existance in az:// only -- abfss:// can only be a cloud test

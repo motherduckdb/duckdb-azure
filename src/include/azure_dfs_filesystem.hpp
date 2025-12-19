@@ -35,12 +35,16 @@ public:
 
 public:
 	Azure::Storage::Files::DataLake::DataLakeFileClient file_client;
-	bool is_directory;
 };
 
 class AzureDfsStorageFileSystem : public AzureStorageFileSystem {
 public:
 	vector<OpenFileInfo> Glob(const string &path, FileOpener *opener = nullptr) override;
+	bool ListFilesExtended(const string &path_in, const std::function<void(OpenFileInfo &info)> &callback,
+	                       optional_ptr<FileOpener> opener) override;
+	bool SupportsListFilesExtended() const override {
+		return true;
+	}
 
 	bool CanHandleFile(const string &fpath) override;
 	void CreateDirectory(const string &directory, optional_ptr<FileOpener> opener = nullptr) override;

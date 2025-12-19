@@ -4,6 +4,7 @@
 #include "azure_storage_account_client.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_opener.hpp"
+#include "duckdb/common/file_system.hpp"
 #include "duckdb/common/helper.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -16,9 +17,8 @@
 #include <azure/core/io/body_stream.hpp>
 #include <azure/storage/blobs.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
+
 #include <cstdlib>
-#include <string>
-#include <utility>
 
 namespace duckdb {
 
@@ -69,7 +69,7 @@ AzureBlobContextState::GetBlobContainerClient(const std::string &blobContainerNa
 AzureBlobStorageFileHandle::AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, const OpenFileInfo &info,
                                                        FileOpenFlags flags, const AzureReadOptions &read_options,
                                                        Azure::Storage::Blobs::BlobClient blob_client)
-    : AzureFileHandle(fs, info, flags, read_options), blob_client(std::move(blob_client)) {
+    : AzureFileHandle(fs, info, flags, FileType::FILE_TYPE_INVALID, read_options), blob_client(std::move(blob_client)) {
 }
 
 //////// AzureBlobStorageFileSystem ////////
@@ -185,29 +185,50 @@ bool AzureBlobStorageFileSystem::ListFilesExtended(const string &path_in,
 	}
 	// Normalize: to end with '/' so it's a clear dir prefix
 	auto path = (!path_in.empty() && path_in.back() == '/') ? path_in : (path_in + '/');
-	auto parsed_url = ParseUrl(path);
-	auto storage_context = GetOrCreateStorageContext(opener, path, parsed_url);
-	auto container = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(parsed_url.container);
+	auto url = ParseUrl(path);
+	auto storage_context = GetOrCreateStorageContext(opener, path, url);
+	auto container = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(url.container);
+
+	// NOTE: this code fakes dir listings by keeping a small cache of seen directories. Since blob store has no such
+	// concept, it's up to us to track and release them in the result. This plays a role in overwrite detection, so
+	// we do the work here.
+	set<string> seen_dirs;
 
 	bool rv = false;
-	const Azure::Storage::Blobs::ListBlobsOptions options = {/* .Prefix = */ parsed_url.path};
+	const Azure::Storage::Blobs::ListBlobsOptions options = {/* .Prefix = */ url.path};
+	// NOTE: there's a LOT of metadata available, and tags, etc. -- see
+	// https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-blobs/inc/azure/storage/blobs/rest_client.hpp#L1134
+	// (struct BlobItemDetails) and
+	// https://learn.microsoft.com/en-us/rest/api/storageservices/list-blobs
 	for (auto page = container.ListBlobs(options); page.HasPage(); page.MoveToNextPage()) {
 		for (auto &blob : page.Blobs) {
-			// confirm that blob is direct "child" of path, skip any deeper descendents
-			if (blob.Name.find('/') != string::npos) {
-				continue;
+			// blob list returns _full paths_, so chop off the prefix first
+			auto child = blob.Name.substr(url.path.size());
+			// file case
+			auto slash_pos = child.find('/');
+			if (slash_pos == string::npos) {
+				rv = true;
+				OpenFileInfo info(child);
+				info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
+				auto &options = info.extended_info->options;
+				options.emplace("type", Value("file"));
+				options.emplace("file_size", Value::BIGINT(blob.BlobSize));
+				options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(blob.Details.LastModified)));
+				callback(info);
+			} else {
+				// chop off slash + tail, take the remainder and treat as directory, caching it in seen to avoid repeat.
+				auto dir = child.substr(0, slash_pos);
+				if (seen_dirs.find(dir) == seen_dirs.end()) {
+					rv = true;
+					seen_dirs.insert(dir);
+					OpenFileInfo info(dir);
+					info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
+					auto &options = info.extended_info->options;
+					options.emplace("type", Value("directory"));
+					options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(blob.Details.LastModified)));
+					callback(info);
+				}
 			}
-			rv = true;
-			OpenFileInfo info(path + blob.Name);
-			info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
-			auto &options = info.extended_info->options;
-			options.emplace("file_size", Value::BIGINT(blob.BlobSize));
-			options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(blob.Details.LastModified)));
-			// NOTE: there's a LOT of metadata available, and tags, etc. -- see
-			// https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-blobs/inc/azure/storage/blobs/rest_client.hpp#L1134
-			// (struct BlobItemDetails) and
-			// https://learn.microsoft.com/en-us/rest/api/storageservices/list-blobs
-			callback(info);
 		}
 	}
 	return rv;
@@ -219,17 +240,63 @@ void AzureBlobStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	if (afh.IsRemoteLoaded()) {
 		return;
 	}
-	afh.file_offset = 0;
-	auto res = afh.blob_client.GetProperties();
-	afh.length = res.Value.BlobSize;
-	afh.last_modified = ToTimestamp(res.Value.LastModified);
-	afh.is_remote_loaded = true;
+
+	// handling a couple situations here:
+	// - does exist, but want exclusive create
+	// - does exist, just get the data
+	// - does exist, truncate (same API as create)
+	// - doesn't exist, must be created (file; dir create doesn't happen here)
+	// - doesn't exist, don't create
+
+	auto set_props = [&](bool is_dir, idx_t length, timestamp_t last_mod) {
+		afh.is_remote_loaded = true; // always set loaded
+		afh.file_type = is_dir ? FileType::FILE_TYPE_DIR : FileType::FILE_TYPE_REGULAR;
+		afh.length = is_dir ? 0 : length;
+		afh.last_modified = last_mod;
+		afh.file_offset = 0; // always reset offset state
+	};
+
+	auto create_file = [&]() {
+		auto res_create = afh.blob_client.AsAppendBlobClient().Create();
+		set_props(false, 0, ToTimestamp(res_create.Value.LastModified));
+	};
+	auto truncate_file = create_file;
+
+	try {
+		auto res_props = afh.blob_client.GetProperties();
+		if (afh.flags.ExclusiveCreate()) {
+			throw IOException("AzureBlobStorageFileSystem will not open file: '%s', ExclusiveCreate specified "
+			                  "while file already exists.");
+		} else if (afh.flags.OpenForWriting() && afh.flags.OverwriteExistingFile()) {
+			return truncate_file();
+		}
+		// NOTE: honor convention for S3/Azure "foo/" empty file -> "foo" dir marker
+		auto is_dir = StringUtil::EndsWith(afh.GetPath(), "/");
+		if (!is_dir) {
+			// NOTE: IFF blob proto connection to ADLSv2, check header `X-Ms-Meta-Hdi_isfolder` in raw resp
+			// for is_dir;
+			// The function MetadataIncidatesIsDirectory does this, albeit as `_detail` non-public api.
+			// see https://forum.rclone.org/t/does-rclone-support-azure-data-lake-gen2/23940/5
+			// and
+			auto ite = res_props.Value.Metadata.find("hdi_isFolder"); // NOTE: Metadata is case-insensitive
+			is_dir |= (ite != res_props.Value.Metadata.end() && ite->second == "true");
+		}
+		return set_props(is_dir, res_props.Value.BlobSize, ToTimestamp(res_props.Value.LastModified));
+	} catch (const Azure::Storage::StorageException &e) {
+		if (int(e.StatusCode) == 404 && afh.flags.OpenForWriting() &&
+		    (afh.flags.OverwriteExistingFile() || afh.flags.CreateFileIfNotExists())) {
+			return create_file();
+		}
+		throw;
+	}
 }
 
 bool AzureBlobStorageFileSystem::DirectoryExists(const string &dirname, optional_ptr<FileOpener> opener) {
 	// NOTE: existance of directory makes no sense in Blob -- since the concept isn't present.
 	// That said we fake it -- if glob(dir/*) returns anything at all, say it exists, otherwise not.
 	// If we want to, could add an option to behave in this, way, always return true or even always false.
+	// This mechanism of relying on dir/ is also frequently used to fake dirs in e.g. S3, so it's consistent
+	// with other common practice.
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage directory test without FileOpener");
 	}
@@ -258,6 +325,27 @@ bool AzureBlobStorageFileSystem::FileExists(const string &filename, optional_ptr
 		return sfh.length >= 0; // aka return true; -- avoid optimizers and shenanigans -- deref handle to be sure
 	}
 	return false;
+}
+
+void AzureBlobStorageFileSystem::RemoveFile(const string &filename, optional_ptr<FileOpener> opener) {
+	auto url = ParseUrl(filename);
+	auto storage_context = GetOrCreateStorageContext(opener, filename, url);
+	auto container = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(url.container);
+	auto blob_client = container.GetBlockBlobClient(url.path);
+	try {
+		blob_client.Delete();
+	} catch (Azure::Storage::StorageException &e) {
+		throw IOException("AzureBlobStorageFileSystem Delete of %s failed with %s Reason Phrase: %s", filename,
+		                  e.ErrorCode, e.ReasonPhrase);
+	}
+}
+
+bool AzureBlobStorageFileSystem::TryRemoveFile(const string &filename, optional_ptr<FileOpener> opener) {
+	auto url = ParseUrl(filename);
+	auto storage_context = GetOrCreateStorageContext(opener, filename, url);
+	auto container = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(url.container);
+	auto blob_client = container.GetBlockBlobClient(url.path);
+	return blob_client.DeleteIfExists().Value.Deleted;
 }
 
 void AzureBlobStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out,
@@ -299,26 +387,24 @@ int64_t AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int6
 }
 
 void AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
+	D_ASSERT(nr_bytes >= 0);
 	auto &afh = handle.Cast<AzureBlobStorageFileHandle>();
 
 	if (!(afh.flags.OpenForWriting() || afh.flags.OpenForAppending())) {
 		throw InternalException("Write called on file opened in read mode");
 	}
 
-	if (location != afh.file_offset || location != afh.length) {
+	if (location != 0 && location != afh.file_offset) {
 		throw InternalException("Write supported only sequentially or at location=0");
 	}
 
 	// NOTE: if changing to BlockBlobClient (probably will do), FileSync below must also become
 	// real. Only with AppendBlobClient is each append committed (sync'd).
 	auto append_client = afh.blob_client.AsAppendBlobClient();
-	if (afh.file_offset == 0) {
-		append_client.Create();
-	}
 	auto body_stream = Azure::Core::IO::MemoryBodyStream(static_cast<uint8_t *>(buffer), nr_bytes);
 	auto res = append_client.AppendBlock(body_stream);
 	afh.last_modified = ToTimestamp(res.Value.LastModified);
-	D_ASSERT(res.Value.AppendOffset == afh.file_offset);
+	D_ASSERT(idx_t(res.Value.AppendOffset) == afh.file_offset);
 	afh.file_offset += nr_bytes;
 	afh.length += nr_bytes;
 	DUCKDB_LOG_FILE_SYSTEM_WRITE(handle, nr_bytes, afh.file_offset);
