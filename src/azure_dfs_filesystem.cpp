@@ -21,6 +21,7 @@
 #include <azure/storage/files/datalake/datalake_options.hpp>
 #include <azure/storage/files/datalake/datalake_responses.hpp>
 #include <cstddef>
+#include <filesystem>
 
 namespace duckdb {
 const string AzureDfsStorageFileSystem::SCHEME = "abfss";
@@ -106,9 +107,7 @@ AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &
 }
 
 void AzureDfsStorageFileHandle::Close() {
-	if (flags.OpenForWriting() || flags.OpenForAppending()) {
-		file_client.Flush(file_offset);
-	}
+	file_system.FileSync(*this);
 }
 
 //////// AzureDfsStorageFileSystem ////////
@@ -366,27 +365,22 @@ void AzureDfsStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t 
 		throw InternalException("Write supported only sequentially or at location=0");
 	}
 
-	DUCKDB_LOG_FILE_SYSTEM_WRITE(handle, nr_bytes, afh.file_offset - nr_bytes);
-
 	auto body_stream = Azure::Core::IO::MemoryBodyStream(static_cast<uint8_t *>(buffer), nr_bytes);
-	if (location == 0) {
-	}
 	Azure::Storage::Files::DataLake::AppendFileOptions append_opts;
 	append_opts.Flush = true;
 	auto append_res = afh.file_client.Append(body_stream, afh.file_offset);
-	// auto flush_res = afh.file_client.Flush(afh.file_offset + nr_bytes);
-	// afh.last_modified = ToTimestamp(flush_res.Value.LastModified);
-	// D_ASSERT(idx_t(flush_res.Value.FileSize) == afh.file_offset + nr_bytes);
+	// NOTE: cannot get TS when using paired append + flush
+	// afh.last_modified = ToTimestamp(append_res.Value.LastModified);
 	afh.file_offset += nr_bytes;
 	afh.length += nr_bytes;
+	DUCKDB_LOG_FILE_SYSTEM_WRITE(handle, nr_bytes, afh.file_offset - nr_bytes);
 }
 
 void AzureDfsStorageFileSystem::FileSync(FileHandle &handle) {
-	// TODO: (@benfleis): uncomment these, and remove from Write to make it async
-	// auto flush_res = afh.file_client.Flush(afh.file_offset);
-	// afh.last_modified = ToTimestamp(flush_res.Value.LastModified);
-	// D_ASSERT(flush_res.Value.FileSize == afh.file_offset);
-	return;
+	auto &afh = handle.Cast<AzureDfsStorageFileHandle>();
+	if (afh.flags.OpenForWriting() || afh.flags.OpenForAppending()) {
+		afh.file_client.Flush(afh.file_offset);
+	}
 }
 
 } // namespace duckdb
