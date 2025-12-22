@@ -1,23 +1,25 @@
 #include "azure_dfs_filesystem.hpp"
 
 #include "azure_storage_account_client.hpp"
+
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/file_system.hpp"
 #include "duckdb/common/helper.hpp"
 #include "duckdb/common/shared_ptr.hpp"
+#include "duckdb/common/string_util.hpp"
+#include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/function/scalar/string_common.hpp"
+#include "duckdb/logging/file_system_logger.hpp"
 
 #include <algorithm>
-#include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/common/storage_exception.hpp>
+#include <azure/storage/files/datalake.hpp>
 #include <azure/storage/files/datalake/datalake_directory_client.hpp>
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/storage/files/datalake/datalake_file_system_client.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
 #include <azure/storage/files/datalake/datalake_responses.hpp>
 #include <cstddef>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace duckdb {
 const string AzureDfsStorageFileSystem::SCHEME = "abfss";
@@ -99,7 +101,7 @@ AzureDfsContextState::GetDfsFileSystemClient(const std::string &file_system_name
 AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, const OpenFileInfo &info,
                                                      FileOpenFlags flags, const AzureReadOptions &read_options,
                                                      Azure::Storage::Files::DataLake::DataLakeFileClient client)
-    : AzureFileHandle(fs, info, flags, read_options), file_client(std::move(client)), is_directory(false) {
+    : AzureFileHandle(fs, info, flags, FileType::FILE_TYPE_INVALID, read_options), file_client(std::move(client)) {
 }
 
 //////// AzureDfsStorageFileSystem ////////
@@ -139,7 +141,7 @@ bool AzureDfsStorageFileSystem::CanHandleFile(const string &fpath) {
 
 bool AzureDfsStorageFileSystem::DirectoryExists(const string &dirname, optional_ptr<FileOpener> opener) {
 	auto handle = OpenFile(dirname, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
-	return handle && handle->Cast<AzureDfsStorageFileHandle>().is_directory;
+	return handle && handle->Cast<AzureDfsStorageFileHandle>().GetType() == FileType::FILE_TYPE_DIR;
 }
 
 void AzureDfsStorageFileSystem::CreateDirectory(const string &directory, optional_ptr<FileOpener> opener) {
@@ -148,7 +150,7 @@ void AzureDfsStorageFileSystem::CreateDirectory(const string &directory, optiona
 
 bool AzureDfsStorageFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
 	auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS, opener);
-	return handle && !handle->Cast<AzureDfsStorageFileHandle>().is_directory;
+	return handle && handle->Cast<AzureDfsStorageFileHandle>().GetType() == FileType::FILE_TYPE_REGULAR;
 }
 
 vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *opener) {
@@ -199,6 +201,43 @@ vector<OpenFileInfo> AzureDfsStorageFileSystem::Glob(const string &path, FileOpe
 	return result;
 }
 
+bool AzureDfsStorageFileSystem::ListFilesExtended(const string &path_in,
+                                                  const std::function<void(OpenFileInfo &info)> &callback,
+                                                  optional_ptr<FileOpener> opener) {
+	if (path_in.find('*') != string::npos) {
+		throw InvalidInputException("ListFiles does not support globs");
+	}
+	// Normalize: to end with '/' so it's a clear dir prefix
+	auto url = ParseUrl(path_in);
+	auto storage_context = GetOrCreateStorageContext(opener, path_in, url);
+	auto fs = storage_context->As<AzureDfsContextState>().GetDfsFileSystemClient(url.container);
+	auto dir_client = fs.GetDirectoryClient(url.path);
+
+	auto child_strip_len = url.path.size() + (StringUtil::EndsWith(url.path, "/") ? 0 : 1);
+	bool rv = false;
+	for (auto page = dir_client.ListPaths(false); page.HasPage(); page.MoveToNextPage()) {
+		for (auto &child : page.Paths) {
+			rv = true;
+			// Strangely, the DataLake API returns whole path, where the Blob API (correctly?)
+			// only returns the child name without prefix.
+			OpenFileInfo info(child.Name.substr(child_strip_len));
+			info.extended_info = make_shared_ptr<ExtendedOpenFileInfo>();
+			auto &options = info.extended_info->options;
+			Value file_type(child.IsDirectory ? "directory" : "file");
+			options.emplace("type", std::move(file_type));
+			options.emplace("file_size", Value::BIGINT(UnsafeNumericCast<int64_t>(child.FileSize)));
+			options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(child.LastModified)));
+
+			// NOTE: there's a LOT of metadata available, and tags, etc. -- see
+			// https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-blobs/inc/azure/storage/blobs/rest_client.hpp#L1134
+			// (struct BlobItemDetails) and
+			// https://learn.microsoft.com/en-us/rest/api/storageservices/list-blobs
+			callback(info);
+		}
+	}
+	return rv;
+}
+
 void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	auto &afh = handle.Cast<AzureDfsStorageFileHandle>();
 
@@ -206,10 +245,13 @@ void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 		return;
 	}
 
-	auto res = afh.file_client.GetProperties();
-	afh.length = res.Value.FileSize;
-	afh.last_modified = ToTimestamp(res.Value.LastModified);
-	afh.is_directory = res.Value.IsDirectory;
+	auto res_props = afh.file_client.GetProperties();
+	auto is_dir = res_props.Value.IsDirectory;
+	afh.is_remote_loaded = true; // always set loaded
+	afh.file_type = is_dir ? FileType::FILE_TYPE_DIR : FileType::FILE_TYPE_REGULAR;
+	afh.length = is_dir ? 0 : res_props.Value.FileSize;
+	afh.last_modified = ToTimestamp(res_props.Value.LastModified);
+	afh.file_offset = 0; // always reset offset state
 }
 
 void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out,

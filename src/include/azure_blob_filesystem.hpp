@@ -30,6 +30,9 @@ public:
 	                           const AzureReadOptions &read_options, Azure::Storage::Blobs::BlobClient blob_client);
 	~AzureBlobStorageFileHandle() override = default;
 
+	void Close() override {
+	}
+
 public:
 	Azure::Storage::Blobs::BlobClient blob_client;
 };
@@ -59,6 +62,9 @@ public:
 	int64_t Write(FileHandle &handle, void *buffer, int64_t nr_bytes) override;
 	void Write(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) override;
 	void FileSync(FileHandle &handle) override;
+
+	void RemoveFile(const string &filename, optional_ptr<FileOpener> opener) override;
+	virtual bool TryRemoveFile(const string &filename, optional_ptr<FileOpener> opener) override;
 
 public:
 	static const string SCHEME;

@@ -53,7 +53,8 @@ statement ok
 COPY lineitem
 TO 'az://${AZ_TEMP_DIR}/lineitem-partitioned' (
 	FORMAT 'parquet',
-	PARTITION_BY (l_linestatus)
+	PARTITION_BY (l_linestatus),
+	OVERWRITE_OR_IGNORE true
 );
 
 # and confirm result from copy
@@ -65,3 +66,14 @@ FROM read_parquet(
 )
 ----
 1802759573	2
+
+# Confirm failure to overwrite when disabled
+statement error
+COPY lineitem
+TO 'az://${AZ_TEMP_DIR}/lineitem-partitioned' (
+	FORMAT 'parquet',
+	PARTITION_BY (l_linestatus),
+	OVERWRITE false
+);
+----
+is not empty

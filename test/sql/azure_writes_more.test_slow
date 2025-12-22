@@ -85,7 +85,8 @@ statement ok
 COPY (FROM lineitem CROSS JOIN generate_series(1, 10))
 TO 'az://${AZ_TEMP_DIR}/big/lineitem-partitioned' (
 	FORMAT 'parquet',
-	PARTITION_BY (l_returnflag, l_linestatus)
+	PARTITION_BY (l_returnflag, l_linestatus),
+	OVERWRITE_OR_IGNORE true
 );
 
 # and confirm result from copy

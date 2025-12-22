@@ -5,6 +5,7 @@
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "include/azure_filesystem.hpp"
 
 #include <azure/storage/common/storage_exception.hpp>
 
@@ -23,10 +24,10 @@ void AzureContextState::QueryEnd() {
 }
 
 AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
-                                 const AzureReadOptions &read_options)
+                                 FileType file_type, const AzureReadOptions &read_options)
     : FileHandle(fs, info.path, flags), flags(flags),
       // File info
-      is_remote_loaded(false), length(0), last_modified(0),
+      is_remote_loaded(false), file_type(file_type), length(0), last_modified(0),
       // Read info
       buffer_available(0), buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0),
       // Options
@@ -53,32 +54,24 @@ bool AzureFileHandle::PostConstruct() {
 }
 
 bool AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
-	// Reads & Appends need size/offset, and any existence check needs a remote
-	// Pure (unflagged) writes do not, since they create/reset metadata, so we save the RTT
-	if (handle.flags.OpenForReading() || handle.flags.OpenForAppending() || handle.flags.ReturnNullIfNotExists() ||
-	    handle.flags.ReturnNullIfExists()) {
-		try {
-			LoadRemoteFileInfo(handle);
-			if (handle.flags.ReturnNullIfExists()) {
-				return false;
-			}
-		} catch (const Azure::Storage::StorageException &e) {
-			auto status_code = int(e.StatusCode);
-			if ((status_code == 200) && handle.flags.ReturnNullIfExists()) {
-				return false;
-			}
-			if (status_code == 404 && handle.flags.ReturnNullIfNotExists()) {
-				return false;
-			}
-			throw IOException(
-			    "AzureBlobStorageFileSystem open file '%s' failed with code '%s', Reason Phrase: '%s', Message: '%s'",
-			    handle.path, e.ErrorCode, e.ReasonPhrase, e.Message);
-		} catch (const std::exception &e) {
-			throw IOException(
-			    "AzureBlobStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
-			    "the credentials used were wrong. Original error message: '%s' ",
-			    handle.path, e.what());
+	try {
+		LoadRemoteFileInfo(handle);
+		if (handle.flags.ReturnNullIfExists()) {
+			return false;
 		}
+	} catch (const Azure::Storage::StorageException &e) {
+		if (int(e.StatusCode) == 404 && handle.flags.ReturnNullIfNotExists()) {
+			return false;
+		}
+		throw IOException(
+		    "AzureStorageFileSystem open file '%s' failed with code '%s', Reason Phrase: '%s', Message: '%s'",
+		    handle.path, e.ErrorCode, e.ReasonPhrase, e.Message);
+	} catch (const IOException &e) {
+		throw;
+	} catch (const std::exception &e) {
+		throw IOException("AzureStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
+		                  "the credentials used were wrong. Original error message: '%s' ",
+		                  handle.path, e.what());
 	}
 	return true;
 }

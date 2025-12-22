@@ -5,7 +5,8 @@
 
 # Create container
 az storage fs create --name testing-private --account-name $AZURE_STORAGE_ACCOUNT
-az storage fs create --name testing-public  --account-name $AZURE_STORAGE_ACCOUNT --public-access filesystem
+az storage fs create --name testing-public --account-name $AZURE_STORAGE_ACCOUNT --public-access filesystem
+az storage fs create --name writes --account-name $AZURE_STORAGE_ACCOUNT
 
 copy_file() {
   local from="${1}"
