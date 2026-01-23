@@ -44,13 +44,13 @@ jobs:
           AZURE_CLIENT_SECRET: op://testing-rw/azure/client_secret
           AZURE_AUTH_ENV: 1
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: 'true'
 
       - name: Setup Ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@main
         with:
           variant: ccache
           key: ${{ github.job }}-${{ matrix.duckdb_arch }}
@@ -61,7 +61,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11.1
         with:
-          vcpkgGitCommitId: ce613c41372b23b1f51333815feb3edd87ef8a8b
+          vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
 
       - name: Build extension
         env:

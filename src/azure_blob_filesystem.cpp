@@ -31,7 +31,6 @@ const string AzureBlobStorageFileSystem::SHORT_PATH_PREFIX = "az://";
 // taken from s3fs.cpp TODO: deduplicate!
 static bool Match(vector<string>::const_iterator key, vector<string>::const_iterator key_end,
                   vector<string>::const_iterator pattern, vector<string>::const_iterator pattern_end) {
-
 	while (key != key_end && pattern != pattern_end) {
 		if (*pattern == "**") {
 			if (std::next(pattern) == pattern_end) {

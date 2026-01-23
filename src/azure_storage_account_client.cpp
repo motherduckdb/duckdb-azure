@@ -632,7 +632,6 @@ const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::strin
 Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_ptr<FileOpener> opener,
                                                                      const std::string &path,
                                                                      const AzureParsedUrl &azure_parsed_url) {
-
 	auto secret_match = LookupSecret(opener, path);
 	if (secret_match.HasMatch()) {
 		const auto &base_secret = secret_match.GetSecret();
