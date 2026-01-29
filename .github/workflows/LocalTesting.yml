@@ -8,14 +8,18 @@ defaults:
   run:
     shell: bash
 
+
+env:
+  VCPKG_COMMIT_ID: 84bab45d415d22042bd0b9081aea57f362da3f35
+
 jobs:
   azurite-tests-linux:
     name: Azurite tests (Linux)
     runs-on: ubuntu-latest
     env:
       VCPKG_TARGET_TRIPLET: 'x64-linux'
-      GEN: ninja
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+      GEN: ninja
       AZURE_STORAGE_CONNECTION_STRING: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;'
       HTTP_PROXY_RUNNING: '1'
       # AZ protocol vars
@@ -24,70 +28,70 @@ jobs:
       AZ_TEMP_DIR: writes
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        submodules: 'true'
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: 'true'
 
-    - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
 
-    - name: install Azure test service
-      run: |
-        sudo apt-get update -y -q
-        sudo apt-get install -y -q azure-cli squid ninja-build
-        npm install -g azurite
+      - name: install Azure test service
+        run: |
+          sudo apt-get update -y -q
+          sudo apt-get install -y -q azure-cli squid ninja-build
+          npm install -g azurite
 
-    - name: Launch & populate Azure test service
-      run: |
-        azurite > azurite_log.txt 2>&1 &
-        sudo ./scripts/run_squid.sh --port 3128 --log_dir squid_logs &
-        sudo ./scripts/run_squid.sh --port 3129 --log_dir squid_auth_logs --auth &
-        sleep 10
-        ./scripts/upload_test_files_to_azurite.sh
+      - name: Launch & populate Azure test service
+        run: |
+          azurite --skipApiVersionCheck > azurite_log.txt 2>&1 &
+          sudo ./scripts/run_squid.sh --port 3128 --log_dir squid_logs &
+          sudo ./scripts/run_squid.sh --port 3129 --log_dir squid_auth_logs --auth &
+          sleep 10
+          ./scripts/upload_test_files_to_azurite.sh
 
-    - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11.1
-      with:
-        vcpkgGitCommitId: ce613c41372b23b1f51333815feb3edd87ef8a8b
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11.1
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
 
-    - &ccache
-      name: Add ccache
-      uses: hendrikmuhs/ccache-action@v1.2
-      with:
-        variant: ccache
-        key: ${{ github.job }}-${{ matrix.duckdb_arch }}
-        restore-keys: ${{ github.job }}-${{ matrix.duckdb_arch }}
-        verbose: 1
-        evict-old-files: 7d
+      - &ccache
+        name: Add ccache
+        uses: hendrikmuhs/ccache-action@main
+        with:
+          variant: ccache
+          key: ${{ github.job }}-${{ matrix.duckdb_arch }}
+          restore-keys: ${{ github.job }}-${{ matrix.duckdb_arch }}
+          verbose: 1
+          evict-old-files: 7d
 
-    # Build extension
-    - name: Build extension
-      env:
-        GEN: ninja
-      run: |
-        make release
+      # Build extension
+      - name: Build extension
+        env:
+          GEN: ninja
+        run: |
+          make release
 
-    - name: Test extension
-      run: |
-        scripts/env_azurite make test
+      - name: Test extension
+        run: |
+          scripts/env_azurite make test
 
-    - name: Run test data integrity check
-      run: |
-        ./build/release/duckdb -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
-        DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 scripts/env_azurite ./build/release/test/unittest "*test/sql/test_data_integrity.test"
+      - name: Run test data integrity check
+        run: |
+          ./build/release/duckdb -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
+          DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 scripts/env_azurite ./build/release/test/unittest "*test/sql/test_data_integrity.test"
 
-    - name: Azure test server log
-      if: always()
-      shell: bash
-      run: |
-        echo "## azurite"
-        cat azurite_log.txt
+      - name: Azure test server log
+        if: always()
+        shell: bash
+        run: |
+          echo "## azurite"
+          cat azurite_log.txt
 
-        echo "## squid"
-        sudo cat squid_logs/*
+          echo "## squid"
+          sudo cat squid_logs/*
 
-        echo "## squid auth"
-        sudo cat squid_auth_logs/*
+          echo "## squid auth"
+          sudo cat squid_auth_logs/*
 
   azurite-tests-macos:
     name: Azurite tests (MacOS)
@@ -104,7 +108,7 @@ jobs:
       AZ_TEMP_DIR: writes
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: 'true'
@@ -112,14 +116,23 @@ jobs:
       - name: Install Ninja
         run: brew install ninja
 
+      - uses: actions/setup-node@v4
+
+      - name: Launch & populate Azure test service
+        run: |
+          npm install -g azurite
+          azurite --skipApiVersionCheck > azurite_log.txt 2>&1 &
+          sleep 10
+          ./scripts/upload_test_files_to_azurite.sh
+
       - uses: actions/setup-python@v2
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
+        uses: lukka/run-vcpkg@v11.1
         with:
-          vcpkgGitCommitId: ce613c41372b23b1f51333815feb3edd87ef8a8b
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
 
       - *ccache
 
@@ -127,14 +140,6 @@ jobs:
         shell: bash
         run: |
           make release
-
-      - uses: actions/setup-node@v3
-      - name: Launch & populate Azure test service
-        run: |
-          npm install -g azurite
-          azurite > azurite_log.txt 2>&1 &
-          sleep 10
-          ./scripts/upload_test_files_to_azurite.sh
 
       - name: Test Extension
         shell: bash
@@ -167,23 +172,32 @@ jobs:
       AZ_TEMP_DIR: writes
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: 'true'
 
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: ce613c41372b23b1f51333815feb3edd87ef8a8b
+      - uses: actions/setup-node@v4
+
+      - name: Launch & populate Azure test service
+        run: |
+          npm install -g azurite
+          azurite --skipApiVersionCheck > azurite_log.txt 2>&1 &
+          sleep 10
+          ./scripts/upload_test_files_to_azurite.sh
 
       - uses: actions/setup-python@v2
         with:
-          python-version: '3.11'
+          python-version: '3.12'
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11.1
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
 
       - &sccache
         name: Add sccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@main
         with:
           variant: sccache
           key: ${{ github.job }}-${{ matrix.duckdb_arch }}
@@ -193,14 +207,6 @@ jobs:
       - name: Build extension
         run: |
           make release
-
-      - uses: actions/setup-node@v3
-      - name: Launch & populate Azure test service
-        run: |
-          npm install -g azurite
-          azurite > azurite_log.txt 2>&1 &
-          sleep 10
-          ./scripts/upload_test_files_to_azurite.sh
 
       - name: Test Extension
         shell: bash
