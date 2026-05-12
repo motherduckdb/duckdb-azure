@@ -60,22 +60,28 @@ static void LoadInternal(ExtensionLoader &loader) {
 	                          "values are: default, curl",
 	                          LogicalType::VARCHAR, "default");
 
-	AzureReadOptions default_read_options;
+	AzureOptions default_options;
 	config.AddExtensionOption("azure_read_transfer_concurrency",
 	                          "Maximum number of threads the Azure client can use for a single parallel read. "
 	                          "If azure_read_transfer_chunk_size is less than azure_read_buffer_size then setting "
 	                          "this > 1 will allow the Azure client to do concurrent requests to fill the buffer.",
-	                          LogicalType::INTEGER, Value::INTEGER(default_read_options.transfer_concurrency));
+	                          LogicalType::INTEGER, Value::INTEGER(default_options.read_transfer_concurrency));
 
 	config.AddExtensionOption("azure_read_transfer_chunk_size",
 	                          "Maximum size in bytes that the Azure client will read in a single request. "
 	                          "It is recommended that this is a factor of azure_read_buffer_size.",
-	                          LogicalType::BIGINT, Value::BIGINT(default_read_options.transfer_chunk_size));
+	                          LogicalType::BIGINT, Value::BIGINT(default_options.read_transfer_chunk_size));
 
 	config.AddExtensionOption("azure_read_buffer_size",
 	                          "Size of the read buffer.  It is recommended that this is evenly divisible by "
 	                          "azure_read_transfer_chunk_size.",
-	                          LogicalType::UBIGINT, Value::UBIGINT(default_read_options.buffer_size));
+	                          LogicalType::UBIGINT, Value::UBIGINT(default_options.read_buffer_size));
+
+	config.AddExtensionOption("azure_write_staged_blocks_max",
+	                          "Maximum number of staged (uncommitted) blocks before an automatic mid-write commit. "
+	                          "Azure limits blobs to 100,000 total blocks; this safety valve prevents hitting that "
+	                          "limit by committing staged blocks early. Default: 10000.",
+	                          LogicalType::UBIGINT, Value::UBIGINT(default_options.write_staged_blocks_max));
 
 	auto *http_proxy = std::getenv("HTTP_PROXY");
 	Value default_http_value = http_proxy ? Value(http_proxy) : Value(nullptr);
