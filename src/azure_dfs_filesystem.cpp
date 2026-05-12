@@ -90,8 +90,8 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 
 //////// AzureDfsContextState ////////
 AzureDfsContextState::AzureDfsContextState(Azure::Storage::Files::DataLake::DataLakeServiceClient client,
-                                           const AzureReadOptions &azure_read_options)
-    : AzureContextState(azure_read_options), service_client(std::move(client)) {
+                                           const AzureOptions &options)
+    : AzureContextState(options), service_client(std::move(client)) {
 }
 
 Azure::Storage::Files::DataLake::DataLakeFileSystemClient
@@ -101,9 +101,9 @@ AzureDfsContextState::GetDfsFileSystemClient(const std::string &file_system_name
 
 //////// AzureDfsContextState ////////
 AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, const OpenFileInfo &info,
-                                                     FileOpenFlags flags, const AzureReadOptions &read_options,
+                                                     FileOpenFlags flags, const AzureOptions &options,
                                                      Azure::Storage::Files::DataLake::DataLakeFileClient client)
-    : AzureFileHandle(fs, info, flags, FileType::FILE_TYPE_INVALID, read_options), file_client(std::move(client)) {
+    : AzureFileHandle(fs, info, flags, FileType::FILE_TYPE_INVALID, options), file_client(std::move(client)) {
 }
 
 void AzureDfsStorageFileHandle::Sync(bool close) {
@@ -139,7 +139,7 @@ unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const OpenFi
 	auto storage_context = GetOrCreateStorageContext(opener, info.path, parsed_url);
 	auto file_system_client = storage_context->As<AzureDfsContextState>().GetDfsFileSystemClient(parsed_url.container);
 
-	auto handle = make_uniq<AzureDfsStorageFileHandle>(*this, info, flags, storage_context->read_options,
+	auto handle = make_uniq<AzureDfsStorageFileHandle>(*this, info, flags, storage_context->options,
 	                                                   file_system_client.GetFileClient(parsed_url.path));
 	if (!handle->PostConstruct()) {
 		return nullptr;
@@ -335,9 +335,9 @@ void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_of
 		range.Length = buffer_out_len;
 		Azure::Storage::Files::DataLake::DownloadFileToOptions options;
 		options.Range = range;
-		options.TransferOptions.Concurrency = afh.read_options.transfer_concurrency;
-		options.TransferOptions.InitialChunkSize = afh.read_options.transfer_chunk_size;
-		options.TransferOptions.ChunkSize = afh.read_options.transfer_chunk_size;
+		options.TransferOptions.Concurrency = afh.options.read_transfer_concurrency;
+		options.TransferOptions.InitialChunkSize = afh.options.read_transfer_chunk_size;
+		options.TransferOptions.ChunkSize = afh.options.read_transfer_chunk_size;
 		auto res = afh.file_client.DownloadTo((uint8_t *)buffer_out, buffer_out_len, options);
 
 	} catch (const Azure::Storage::StorageException &e) {
@@ -349,10 +349,9 @@ void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_of
 shared_ptr<AzureContextState> AzureDfsStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
                                                                               const string &path,
                                                                               const AzureParsedUrl &parsed_url) {
-	auto azure_read_options = ParseAzureReadOptions(opener);
+	auto azure_options = ParseAzureOptions(opener);
 
-	return make_shared_ptr<AzureDfsContextState>(ConnectToDfsStorageAccount(opener, path, parsed_url),
-	                                             azure_read_options);
+	return make_shared_ptr<AzureDfsContextState>(ConnectToDfsStorageAccount(opener, path, parsed_url), azure_options);
 }
 
 int64_t AzureDfsStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes) {

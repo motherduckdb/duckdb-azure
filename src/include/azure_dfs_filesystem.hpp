@@ -15,8 +15,7 @@ namespace duckdb {
 
 class AzureDfsContextState : public AzureContextState {
 public:
-	AzureDfsContextState(Azure::Storage::Files::DataLake::DataLakeServiceClient client,
-	                     const AzureReadOptions &azure_read_options);
+	AzureDfsContextState(Azure::Storage::Files::DataLake::DataLakeServiceClient client, const AzureOptions &options);
 	Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 	GetDfsFileSystemClient(const std::string &file_system_name) const;
 
@@ -29,8 +28,7 @@ class AzureDfsStorageFileSystem;
 class AzureDfsStorageFileHandle : public AzureFileHandle {
 public:
 	AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
-	                          const AzureReadOptions &read_options,
-	                          Azure::Storage::Files::DataLake::DataLakeFileClient client);
+	                          const AzureOptions &options, Azure::Storage::Files::DataLake::DataLakeFileClient client);
 	~AzureDfsStorageFileHandle() override = default;
 
 	void Sync(bool close = false);
