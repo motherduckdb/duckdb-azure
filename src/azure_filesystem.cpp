@@ -273,9 +273,19 @@ AzureOptions AzureStorageFileSystem::ParseAzureOptions(optional_ptr<FileOpener> 
 		options.read_buffer_size = buffer_size_val.GetValue<idx_t>();
 	}
 
-	Value write_staged_blocks_max_val;
-	if (FileOpener::TryGetCurrentSetting(opener, "azure_write_staged_blocks_max", write_staged_blocks_max_val)) {
-		options.write_staged_blocks_max = write_staged_blocks_max_val.GetValue<idx_t>();
+	Value write_block_size_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_write_block_size", write_block_size_val)) {
+		auto size = write_block_size_val.GetValue<idx_t>();
+		if (size > AzureOptions::WRITE_BLOCK_SIZE_MAX) {
+			throw InvalidInputException("azure_write_block_size must be at most 4000 MiB");
+		}
+		options.write_block_size = (size > 0) ? size : AzureOptions::WRITE_BLOCK_SIZE_DEFAULT;
+	}
+
+	Value write_staged_blocks_per_commit_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_write_staged_blocks_per_commit",
+	                                     write_staged_blocks_per_commit_val)) {
+		options.write_staged_blocks_per_commit = write_staged_blocks_per_commit_val.GetValue<idx_t>();
 	}
 
 	return options;
