@@ -78,11 +78,23 @@ AzureBlobStorageFileHandle::AzureBlobStorageFileHandle(AzureBlobStorageFileSyste
     : AzureFileHandle(fs, info, flags, FileType::FILE_TYPE_INVALID, opts), blob_client(std::move(blob_client)) {
 }
 
+void AzureBlobStorageFileHandle::StageWriteBuffer() {
+	if (write_buffer_offset == 0) {
+		return;
+	}
+	auto block_id = MakeBlockId(static_cast<uint32_t>(committed_block_count) + staged_block_count);
+	auto body_stream = Azure::Core::IO::MemoryBodyStream(write_buffer.get(), write_buffer_offset);
+	blob_client.StageBlock(block_id, body_stream); // throws on error
+	staged_block_count++;
+	write_buffer_offset = 0;
+}
+
 void AzureBlobStorageFileHandle::Sync() {
 	if (!(flags.OpenForWriting() || flags.OpenForAppending())) {
 		return;
 	}
 	try {
+		StageWriteBuffer();
 		if (staged_block_count == 0) {
 			return;
 		}
@@ -420,6 +432,8 @@ int64_t AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int6
 	return nr_bytes;
 }
 
+// Write pipeline: data accumulates in write_buffer; full blocks are StageBlock'd to Azure;
+// on Sync/Close, all staged blocks are committed via CommitBlockList.
 void AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
 	D_ASSERT(nr_bytes >= 0);
 	auto &afh = handle.Cast<AzureBlobStorageFileHandle>();
@@ -430,12 +444,28 @@ void AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t
 
 	D_ASSERT(location == afh.file_offset);
 
-	auto block_id = MakeBlockId(static_cast<uint32_t>(afh.committed_block_count) + afh.staged_block_count);
-	auto body_stream = Azure::Core::IO::MemoryBodyStream(static_cast<uint8_t *>(buffer), nr_bytes);
-	afh.blob_client.StageBlock(block_id, body_stream); // throws on error
-	afh.staged_block_count++;
-	if (afh.staged_block_count >= afh.options.write_staged_blocks_max) {
-		afh.Sync();
+	const idx_t block_size = afh.options.write_block_size;
+	auto *src = static_cast<const uint8_t *>(buffer);
+	idx_t remaining = static_cast<idx_t>(nr_bytes);
+
+	while (remaining > 0) {
+		if (!afh.write_buffer) {
+			afh.write_buffer = duckdb::unique_ptr<data_t[]>(new data_t[block_size]);
+		}
+		idx_t space = block_size - afh.write_buffer_offset;
+		idx_t to_copy = MinValue<idx_t>(space, remaining);
+		memcpy(afh.write_buffer.get() + afh.write_buffer_offset, src, to_copy);
+		afh.write_buffer_offset += to_copy;
+		src += to_copy;
+		remaining -= to_copy;
+
+		if (afh.write_buffer_offset == block_size) {
+			afh.StageWriteBuffer();
+			if (afh.options.write_staged_blocks_per_commit > 0 &&
+			    afh.staged_block_count >= afh.options.write_staged_blocks_per_commit) {
+				afh.Sync();
+			}
+		}
 	}
 
 	afh.file_offset += nr_bytes;

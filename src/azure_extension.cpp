@@ -73,15 +73,23 @@ static void LoadInternal(ExtensionLoader &loader) {
 	                          LogicalType::BIGINT, Value::BIGINT(default_options.read_transfer_chunk_size));
 
 	config.AddExtensionOption("azure_read_buffer_size",
-	                          "Size of the read buffer.  It is recommended that this is evenly divisible by "
+	                          "Size of the read buffer. It is recommended that this is evenly divisible by "
 	                          "azure_read_transfer_chunk_size.",
 	                          LogicalType::UBIGINT, Value::UBIGINT(default_options.read_buffer_size));
 
-	config.AddExtensionOption("azure_write_staged_blocks_max",
-	                          "Maximum number of staged (uncommitted) blocks before an automatic mid-write commit. "
-	                          "Azure limits blobs to 100,000 total blocks; this safety valve prevents hitting that "
-	                          "limit by committing staged blocks early. Default: 10000.",
-	                          LogicalType::UBIGINT, Value::UBIGINT(default_options.write_staged_blocks_max));
+	config.AddExtensionOption("azure_write_block_size",
+	                          "Size in bytes of each block for Blob/DFS writes. "
+	                          "0 restores the default (8 MiB). Max 4000 MiB (Azure per-request limit). "
+	                          "Azure hard-limits a blob to 50,000 blocks; increase this to write files "
+	                          "larger than 50,000 × azure_write_block_size bytes.",
+	                          LogicalType::UBIGINT, Value::UBIGINT(default_options.write_block_size));
+
+	config.AddExtensionOption("azure_write_staged_blocks_per_commit",
+	                          "Number of blocks staged before an intermediate CommitBlockList. "
+	                          "0 (default) disables intermediate commits; the full block list is committed on close. "
+	                          "Non-zero values make partial writes visible sooner at the cost of extra commit RPCs. "
+	                          "Does not affect the 50,000-block blob limit; increase azure_write_block_size for that.",
+	                          LogicalType::UBIGINT, Value::UBIGINT(default_options.write_staged_blocks_per_commit));
 
 	auto *http_proxy = std::getenv("HTTP_PROXY");
 	Value default_http_value = http_proxy ? Value(http_proxy) : Value(nullptr);

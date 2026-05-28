@@ -99,6 +99,34 @@ IDs may be specified.
 
 See also [Azure Identity Managed Identity Support](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#managed-identity-support)
 
+## Writing
+
+Writing to Azure Storage stages blocks during upload; staged blocks are not
+visible until committed which occurs during a sync or close call. Thus large
+uploads may not be visible to standard Azure tooling until whole file has been
+written.
+
+### File size limit
+
+Azure [hard-limits a blob to **50,000
+blocks**](https://learn.microsoft.com/en-us/azure/storage/blobs/scalability-targets).
+With the default block size of 8 MiB this caps blob size at roughly **390
+GiB**. To write larger files, increase the block size:
+
+```sql
+SET azure_write_block_size = '128MiB';  -- raises the cap to ~6.1 TiB
+SET azure_write_block_size = '4000MiB'; -- maximum block size, cap ~190 TiB
+```
+
+The block size can be any positive value up to 4,000 MiB (Azure's per-request limit). Set to `0` to restore the default (8 MiB).
+
+### Write settings
+
+| Setting | Default | Description |
+|---|---|---|
+| `azure_write_block_size` | `8MiB` | Size of each block for Blob/DFS writes. `0` restores the default. Max 4,000 MiB. Increase to raise the file size ceiling. |
+| `azure_write_staged_blocks_per_commit` | `0` | Blocks staged before an intermediate commit. `0` disables intermediate commits; partial writes are not visible until the file is closed. |
+
 ## Supported architectures
 
 The extension is tested & distributed for Linux (x64, arm64), MacOS (x64, arm64) and Windows (x64)
@@ -122,4 +150,4 @@ cd duckdb_azure
 GEN=ninja VCPKG_TOOLCHAIN_PATH=$PWD/../vcpkg/scripts/buildsystems/vcpkg.cmake make
 ```
 
-Please also refer to our [Build Guide](https://duckdb.org/dev/building) and [Contribution Guide]([CONTRIBUTING.md](https://github.com/duckdb/duckdb/blob/main/CONTRIBUTING.md)).
+Please also refer to our [Build Guide](https://duckdb.org/dev/building) and [Contribution Guide](https://github.com/duckdb/duckdb/blob/main/CONTRIBUTING.md).

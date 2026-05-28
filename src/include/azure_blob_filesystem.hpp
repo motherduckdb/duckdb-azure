@@ -31,6 +31,7 @@ public:
 	                           const AzureOptions &options, Azure::Storage::Blobs::BlockBlobClient blob_client);
 	~AzureBlobStorageFileHandle() override = default;
 
+	void StageWriteBuffer();
 	void Sync();
 	void Close() override;
 
@@ -38,6 +39,8 @@ public:
 	Azure::Storage::Blobs::BlockBlobClient blob_client;
 	size_t committed_block_count = 0; // maintain position while open; only used if Sync() called before Close()
 	uint32_t staged_block_count = 0;
+	duckdb::unique_ptr<data_t[]> write_buffer;
+	idx_t write_buffer_offset = 0;
 };
 
 class AzureBlobStorageFileSystem : public AzureStorageFileSystem {

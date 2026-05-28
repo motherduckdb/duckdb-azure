@@ -31,11 +31,19 @@ public:
 	                          const AzureOptions &options, Azure::Storage::Files::DataLake::DataLakeFileClient client);
 	~AzureDfsStorageFileHandle() override = default;
 
+	void StageWriteBuffer();
 	void Sync(bool close = false);
 	void Close() override;
 
 public:
 	Azure::Storage::Files::DataLake::DataLakeFileClient file_client;
+	duckdb::unique_ptr<data_t[]> write_buffer;
+	idx_t write_buffer_offset = 0;
+	// Bytes sent to Append (staged on server, committed or not): always <= file_offset,
+	// with file_offset - staged_offset == write_buffer_offset.
+	idx_t staged_offset = 0;
+	uint32_t staged_block_count = 0;
+	uint32_t committed_block_count = 0;
 };
 
 class AzureDfsStorageFileSystem : public AzureStorageFileSystem {

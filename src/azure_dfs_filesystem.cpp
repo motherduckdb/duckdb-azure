@@ -106,11 +106,34 @@ AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &
     : AzureFileHandle(fs, info, flags, FileType::FILE_TYPE_INVALID, options), file_client(std::move(client)) {
 }
 
+void AzureDfsStorageFileHandle::StageWriteBuffer() {
+	if (write_buffer_offset == 0) {
+		return;
+	}
+	auto body_stream = Azure::Core::IO::MemoryBodyStream(write_buffer.get(), write_buffer_offset);
+	file_client.Append(body_stream, staged_offset);
+	staged_offset += write_buffer_offset;
+	staged_block_count++;
+	write_buffer_offset = 0;
+}
+
 void AzureDfsStorageFileHandle::Sync(bool close) {
-	if (flags.OpenForWriting() || flags.OpenForAppending()) {
+	if (!(flags.OpenForWriting() || flags.OpenForAppending())) {
+		return;
+	}
+	try {
+		StageWriteBuffer();
+		if (staged_block_count == 0 && !close) {
+			return;
+		}
 		Azure::Storage::Files::DataLake::FlushFileOptions flush_opts;
 		flush_opts.Close = close;
-		file_client.Flush(file_offset, flush_opts);
+		file_client.Flush(staged_offset, flush_opts);
+		committed_block_count += staged_block_count;
+		staged_block_count = 0;
+	} catch (const Azure::Storage::StorageException &e) {
+		throw IOException("AzureDfsStorageFileSystem FileSync of '%s' failed with %s Reason Phrase: %s", GetPath(),
+		                  e.ErrorCode, e.ReasonPhrase);
 	}
 }
 
@@ -360,6 +383,8 @@ int64_t AzureDfsStorageFileSystem::Write(FileHandle &handle, void *buffer, int64
 	return nr_bytes;
 }
 
+// Write pipeline: data accumulates in write_buffer; full blocks are Append'd to Azure (staged, not yet visible);
+// on Sync/Close, staged blocks are committed via Flush.
 void AzureDfsStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
 	D_ASSERT(nr_bytes >= 0);
 	auto &afh = handle.Cast<AzureDfsStorageFileHandle>();
@@ -373,10 +398,30 @@ void AzureDfsStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t 
 		throw InternalException("Write supported only sequentially or at location=0");
 	}
 
-	auto body_stream = Azure::Core::IO::MemoryBodyStream(static_cast<uint8_t *>(buffer), nr_bytes);
-	auto append_res = afh.file_client.Append(body_stream, afh.file_offset);
-	// NOTE: cannot get TS when using paired append + flush
-	// afh.last_modified = ToTimestamp(append_res.Value.LastModified);
+	const idx_t block_sz = afh.options.write_block_size;
+	auto *src = static_cast<const uint8_t *>(buffer);
+	idx_t remaining = static_cast<idx_t>(nr_bytes);
+
+	while (remaining > 0) {
+		if (!afh.write_buffer) {
+			afh.write_buffer = duckdb::unique_ptr<data_t[]>(new data_t[block_sz]);
+		}
+		idx_t space = block_sz - afh.write_buffer_offset;
+		idx_t to_copy = MinValue<idx_t>(space, remaining);
+		memcpy(afh.write_buffer.get() + afh.write_buffer_offset, src, to_copy);
+		afh.write_buffer_offset += to_copy;
+		src += to_copy;
+		remaining -= to_copy;
+
+		if (afh.write_buffer_offset == block_sz) {
+			afh.StageWriteBuffer();
+			if (afh.options.write_staged_blocks_per_commit > 0 &&
+			    afh.staged_block_count >= afh.options.write_staged_blocks_per_commit) {
+				afh.Sync();
+			}
+		}
+	}
+
 	afh.file_offset += nr_bytes;
 	afh.length += nr_bytes;
 	DUCKDB_LOG_FILE_SYSTEM_WRITE(handle, nr_bytes, afh.file_offset - nr_bytes);
