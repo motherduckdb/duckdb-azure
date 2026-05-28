@@ -128,7 +128,7 @@ void AzureDfsStorageFileHandle::Sync(bool close) {
 		}
 		Azure::Storage::Files::DataLake::FlushFileOptions flush_opts;
 		flush_opts.Close = close;
-		file_client.Flush(file_offset, flush_opts);
+		file_client.Flush(staged_offset, flush_opts);
 		committed_block_count += staged_block_count;
 		staged_block_count = 0;
 	} catch (const Azure::Storage::StorageException &e) {
