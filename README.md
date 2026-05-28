@@ -150,4 +150,4 @@ cd duckdb_azure
 GEN=ninja VCPKG_TOOLCHAIN_PATH=$PWD/../vcpkg/scripts/buildsystems/vcpkg.cmake make
 ```
 
-Please also refer to our [Build Guide](https://duckdb.org/dev/building) and [Contribution Guide](<[CONTRIBUTING.md](https://github.com/duckdb/duckdb/blob/main/CONTRIBUTING.md)>).
+Please also refer to our [Build Guide](https://duckdb.org/dev/building) and [Contribution Guide](https://github.com/duckdb/duckdb/blob/main/CONTRIBUTING.md).

@@ -96,4 +96,46 @@ TO '{proto}://duckdblabs-write-testing/extension/azure/lineitem-partitioned' (
 ----
 is not empty
 
+# -----------------------------------------------------------------------------
+# Write block-size and staged-commit params. 10 rows x 300-char payload -> ~3KB CSV,
+# using 1k blocks forces exercise of intermediate flush behaviors.
+#
+
+# staged_blocks_per_commit = 1: flush after every full block
+statement ok
+SET azure_write_block_size = 1024;
+
+statement ok
+SET azure_write_staged_blocks_per_commit = 1;
+
+statement ok
+COPY (SELECT repeat('x', 300) AS payload FROM range(10))
+TO '{proto}://duckdblabs-write-testing/extension/azure/write-params-commit1.csv';
+
+query II
+SELECT count(*), sum(length(payload))
+FROM '{proto}://duckdblabs-write-testing/extension/azure/write-params-commit1.csv';
+----
+10	3000
+
+# staged_blocks_per_commit = 2: flush every two blocks
+statement ok
+SET azure_write_staged_blocks_per_commit = 2;
+
+statement ok
+COPY (SELECT repeat('x', 300) AS payload FROM range(10))
+TO '{proto}://duckdblabs-write-testing/extension/azure/write-params-commit2.csv';
+
+query II
+SELECT count(*), sum(length(payload))
+FROM '{proto}://duckdblabs-write-testing/extension/azure/write-params-commit2.csv';
+----
+10	3000
+
+statement ok
+RESET azure_write_block_size;
+
+statement ok
+RESET azure_write_staged_blocks_per_commit;
+
 endloop
