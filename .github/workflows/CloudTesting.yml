@@ -53,8 +53,8 @@ jobs:
         uses: hendrikmuhs/ccache-action@main
         with:
           variant: ccache
-          key: ${{ github.job }}-${{ matrix.duckdb_arch }}
-          restore-keys: ${{ github.job }}-${{ matrix.duckdb_arch }}
+          key: ${{ github.job }}
+          restore-keys: ${{ github.job }}
           verbose: 1
           evict-old-files: 7d
 
