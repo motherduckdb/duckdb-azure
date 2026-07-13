@@ -11,6 +11,7 @@
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/function/scalar/string_common.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
+#include "duckdb/logging/log_manager.hpp"
 #include "duckdb/main/client_data.hpp"
 #include "include/azure_blob_filesystem.hpp"
 
@@ -62,8 +63,8 @@ static bool Match(vector<string>::const_iterator key, vector<string>::const_iter
 
 //////// AzureBlobContextState ////////
 AzureBlobContextState::AzureBlobContextState(Azure::Storage::Blobs::BlobServiceClient client,
-                                             const AzureReadOptions &azure_read_options)
-    : AzureContextState(azure_read_options), service_client(std::move(client)) {
+                                             const AzureOptions &options)
+    : AzureContextState(options), service_client(std::move(client)) {
 }
 
 Azure::Storage::Blobs::BlobContainerClient
@@ -73,27 +74,41 @@ AzureBlobContextState::GetBlobContainerClient(const std::string &blobContainerNa
 
 //////// AzureBlobStorageFileHandle ////////
 AzureBlobStorageFileHandle::AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, const OpenFileInfo &info,
-                                                       FileOpenFlags flags, const AzureReadOptions &read_options,
+                                                       FileOpenFlags flags, const AzureOptions &opts,
                                                        Azure::Storage::Blobs::BlockBlobClient blob_client)
-    : AzureFileHandle(fs, info, flags, FileType::FILE_TYPE_INVALID, read_options), blob_client(std::move(blob_client)) {
+    : AzureFileHandle(fs, info, flags, FileType::FILE_TYPE_INVALID, opts), blob_client(std::move(blob_client)) {
+}
+
+void AzureBlobStorageFileHandle::StageWriteBuffer() {
+	if (write_buffer_offset == 0) {
+		return;
+	}
+	auto block_id = MakeBlockId(static_cast<uint32_t>(committed_block_count) + staged_block_count);
+	auto body_stream = Azure::Core::IO::MemoryBodyStream(write_buffer.get(), write_buffer_offset);
+	blob_client.StageBlock(block_id, body_stream); // throws on error
+	staged_block_count++;
+	write_buffer_offset = 0;
 }
 
 void AzureBlobStorageFileHandle::Sync() {
-	D_ASSERT((flags.OpenForWriting() || flags.OpenForAppending()) || pending_block_ids.empty());
-	if (pending_block_ids.empty()) {
+	if (!(flags.OpenForWriting() || flags.OpenForAppending())) {
 		return;
 	}
 	try {
+		StageWriteBuffer();
+		if (staged_block_count == 0) {
+			return;
+		}
 		std::vector<std::string> all_ids;
-		all_ids.reserve(committed_block_count + pending_block_ids.size());
-		for (uint32_t i = 0; i < committed_block_count; i++) {
+		const auto total = static_cast<uint32_t>(committed_block_count) + staged_block_count;
+		all_ids.reserve(total);
+		for (uint32_t i = 0; i < total; i++) {
 			all_ids.push_back(MakeBlockId(i));
 		}
-		all_ids.insert(all_ids.end(), pending_block_ids.begin(), pending_block_ids.end());
 		auto res = blob_client.CommitBlockList(all_ids);
 		last_modified = AzureBlobStorageFileSystem::ToTimestamp(res.Value.LastModified);
-		committed_block_count += pending_block_ids.size();
-		pending_block_ids.clear();
+		committed_block_count += staged_block_count;
+		staged_block_count = 0;
 	} catch (const Azure::Storage::StorageException &e) {
 		throw IOException("AzureBlobStorageFileSystem FileSync of '%s' failed with %s Reason Phrase: %s", GetPath(),
 		                  e.ErrorCode, e.ReasonPhrase);
@@ -126,8 +141,8 @@ unique_ptr<AzureFileHandle> AzureBlobStorageFileSystem::CreateHandle(const OpenF
 	auto container = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(parsed_url.container);
 	auto blob_client = container.GetBlockBlobClient(parsed_url.path);
 
-	auto handle = make_uniq<AzureBlobStorageFileHandle>(*this, info, flags, storage_context->read_options,
-	                                                    std::move(blob_client));
+	auto handle =
+	    make_uniq<AzureBlobStorageFileHandle>(*this, info, flags, storage_context->options, std::move(blob_client));
 	if (!handle->PostConstruct()) {
 		return nullptr;
 	}
@@ -392,9 +407,9 @@ void AzureBlobStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_o
 		range.Length = buffer_out_len;
 		Azure::Storage::Blobs::DownloadBlobToOptions options;
 		options.Range = range;
-		options.TransferOptions.Concurrency = afh.read_options.transfer_concurrency;
-		options.TransferOptions.InitialChunkSize = afh.read_options.transfer_chunk_size;
-		options.TransferOptions.ChunkSize = afh.read_options.transfer_chunk_size;
+		options.TransferOptions.Concurrency = afh.options.read_transfer_concurrency;
+		options.TransferOptions.InitialChunkSize = afh.options.read_transfer_chunk_size;
+		options.TransferOptions.ChunkSize = afh.options.read_transfer_chunk_size;
 		auto res = afh.blob_client.DownloadTo((uint8_t *)buffer_out, buffer_out_len, options);
 
 	} catch (const Azure::Storage::StorageException &e) {
@@ -406,10 +421,9 @@ void AzureBlobStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_o
 shared_ptr<AzureContextState> AzureBlobStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
                                                                                const string &path,
                                                                                const AzureParsedUrl &parsed_url) {
-	auto azure_read_options = ParseAzureReadOptions(opener);
+	auto azure_options = ParseAzureOptions(opener);
 
-	return make_shared_ptr<AzureBlobContextState>(ConnectToBlobStorageAccount(opener, path, parsed_url),
-	                                              azure_read_options);
+	return make_shared_ptr<AzureBlobContextState>(ConnectToBlobStorageAccount(opener, path, parsed_url), azure_options);
 }
 
 int64_t AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes) {
@@ -419,6 +433,8 @@ int64_t AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int6
 	return nr_bytes;
 }
 
+// Write pipeline: data accumulates in write_buffer; full blocks are StageBlock'd to Azure;
+// on Sync/Close, all staged blocks are committed via CommitBlockList.
 void AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
 	D_ASSERT(nr_bytes >= 0);
 	auto &afh = handle.Cast<AzureBlobStorageFileHandle>();
@@ -427,12 +443,32 @@ void AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t
 		throw InternalException("Write called on file opened in read mode");
 	}
 
-	D_ASSERT(location == afh.file_offset || location == 0);
+	D_ASSERT(location == afh.file_offset);
 
-	auto block_id = MakeBlockId(afh.committed_block_count + static_cast<uint32_t>(afh.pending_block_ids.size()));
-	auto body_stream = Azure::Core::IO::MemoryBodyStream(static_cast<uint8_t *>(buffer), nr_bytes);
-	afh.blob_client.StageBlock(block_id, body_stream); // throws on error
-	afh.pending_block_ids.push_back(block_id);
+	const idx_t block_size = afh.options.write_block_size;
+	auto *src = static_cast<const uint8_t *>(buffer);
+	idx_t remaining = static_cast<idx_t>(nr_bytes);
+
+	while (remaining > 0) {
+		if (!afh.write_buffer) {
+			afh.write_buffer = duckdb::unique_ptr<data_t[]>(new data_t[block_size]);
+		}
+		idx_t space = block_size - afh.write_buffer_offset;
+		idx_t to_copy = MinValue<idx_t>(space, remaining);
+		memcpy(afh.write_buffer.get() + afh.write_buffer_offset, src, to_copy);
+		afh.write_buffer_offset += to_copy;
+		src += to_copy;
+		remaining -= to_copy;
+
+		if (afh.write_buffer_offset == block_size) {
+			afh.StageWriteBuffer();
+			if (afh.options.write_staged_blocks_per_commit > 0 &&
+			    afh.staged_block_count >= afh.options.write_staged_blocks_per_commit) {
+				afh.Sync();
+			}
+		}
+	}
+
 	afh.file_offset += nr_bytes;
 	afh.length += nr_bytes;
 	DUCKDB_LOG_FILE_SYSTEM_WRITE(handle, nr_bytes, afh.file_offset);

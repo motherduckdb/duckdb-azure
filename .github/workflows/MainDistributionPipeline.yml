@@ -16,10 +16,10 @@ jobs:
     name: Build extension binaries
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@main
     with:
-      extension_name: azure
-      duckdb_version: main
-      ci_tools_version: main
-      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools;windows_amd64_mingw'
+      extension_name: &ext_name azure
+      duckdb_version: &duckdb_ref main
+      ci_tools_version: &ci_tools_ref main
+      exclude_archs: &exclude_archs wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools;windows_amd64_mingw
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
@@ -27,11 +27,12 @@ jobs:
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_deploy.yml@main
     secrets: inherit
     with:
-      extension_name: azure
-      duckdb_version: main
-      ci_tools_version: main
-      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools;windows_amd64_mingw'
-      deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
+      extension_name: *ext_name
+      duckdb_version: *duckdb_ref
+      ci_tools_version: *ci_tools_ref
+      exclude_archs: *exclude_archs
+      deploy_latest: ${{ startsWith(github.ref, 'refs/heads/v') || github.ref == 'refs/heads/main' }}
+      deploy_versioned: ${{ startsWith(github.ref, 'refs/heads/v') || github.ref == 'refs/heads/main' }}
 
   code-quality-check:
     name: Code Quality Check
@@ -42,4 +43,4 @@ jobs:
       extension_name: azure
       # TODO: format_checks += ;tidy
       format_checks: format
-      extra_toolchains: 'python3'
+      extra_toolchains: "python3"

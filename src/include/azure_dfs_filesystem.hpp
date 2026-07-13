@@ -15,8 +15,7 @@ namespace duckdb {
 
 class AzureDfsContextState : public AzureContextState {
 public:
-	AzureDfsContextState(Azure::Storage::Files::DataLake::DataLakeServiceClient client,
-	                     const AzureReadOptions &azure_read_options);
+	AzureDfsContextState(Azure::Storage::Files::DataLake::DataLakeServiceClient client, const AzureOptions &options);
 	Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 	GetDfsFileSystemClient(const std::string &file_system_name) const;
 
@@ -29,15 +28,22 @@ class AzureDfsStorageFileSystem;
 class AzureDfsStorageFileHandle : public AzureFileHandle {
 public:
 	AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
-	                          const AzureReadOptions &read_options,
-	                          Azure::Storage::Files::DataLake::DataLakeFileClient client);
+	                          const AzureOptions &options, Azure::Storage::Files::DataLake::DataLakeFileClient client);
 	~AzureDfsStorageFileHandle() override = default;
 
+	void StageWriteBuffer();
 	void Sync(bool close = false);
 	void Close() override;
 
 public:
 	Azure::Storage::Files::DataLake::DataLakeFileClient file_client;
+	duckdb::unique_ptr<data_t[]> write_buffer;
+	idx_t write_buffer_offset = 0;
+	// Bytes sent to Append (staged on server, committed or not): always <= file_offset,
+	// with file_offset - staged_offset == write_buffer_offset.
+	idx_t staged_offset = 0;
+	uint32_t staged_block_count = 0;
+	uint32_t committed_block_count = 0;
 };
 
 class AzureDfsStorageFileSystem : public AzureStorageFileSystem {

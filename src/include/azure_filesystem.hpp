@@ -14,15 +14,22 @@
 
 namespace duckdb {
 
-struct AzureReadOptions {
-	int32_t transfer_concurrency = 5;
-	int64_t transfer_chunk_size = 1 * 1024 * 1024;
-	idx_t buffer_size = 1 * 1024 * 1024;
+struct AzureOptions {
+	// 8 MiB - Base block size, copies rclone's default for concurrent transfers
+	// 4000 MiB - Azure doc'd max per Append/StageBlock
+	static const idx_t WRITE_BLOCK_SIZE_DEFAULT = (idx_t)8 * 1024 * 1024;
+	static const idx_t WRITE_BLOCK_SIZE_MAX = (idx_t)4000 * 1024 * 1024;
+
+	int32_t read_transfer_concurrency = 5;
+	int64_t read_transfer_chunk_size = (int64_t)8 * 1024 * 1024;
+	idx_t read_buffer_size = (idx_t)8 * 1024 * 1024;
+	idx_t write_block_size = WRITE_BLOCK_SIZE_DEFAULT;
+	idx_t write_staged_blocks_per_commit = 0;
 };
 
 class AzureContextState : public ClientContextState {
 public:
-	const AzureReadOptions read_options;
+	const AzureOptions options;
 
 public:
 	virtual bool IsValid() const;
@@ -40,7 +47,7 @@ public:
 	}
 
 protected:
-	AzureContextState(const AzureReadOptions &read_options);
+	explicit AzureContextState(const AzureOptions &options);
 
 protected:
 	bool is_valid;
@@ -62,7 +69,7 @@ public:
 
 protected:
 	AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags, FileType file_type,
-	                const AzureReadOptions &read_options);
+	                const AzureOptions &options);
 
 public:
 	FileOpenFlags flags;
@@ -82,7 +89,7 @@ public:
 	idx_t buffer_start;
 	idx_t buffer_end;
 
-	const AzureReadOptions read_options;
+	const AzureOptions options;
 };
 
 class AzureStorageFileSystem : public FileSystem {
@@ -132,7 +139,7 @@ protected:
 	                                                           const AzureParsedUrl &parsed_url) = 0;
 
 	virtual void LoadRemoteFileInfo(AzureFileHandle &handle) = 0;
-	static AzureReadOptions ParseAzureReadOptions(optional_ptr<FileOpener> opener);
+	static AzureOptions ParseAzureOptions(optional_ptr<FileOpener> opener);
 
 public:
 	static timestamp_t ToTimestamp(const Azure::DateTime &dt);

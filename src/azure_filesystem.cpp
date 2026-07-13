@@ -4,6 +4,7 @@
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
+#include "duckdb/logging/log_manager.hpp"
 #include "duckdb/main/client_context.hpp"
 
 #include <azure/storage/common/storage_exception.hpp>
@@ -12,8 +13,7 @@
 
 namespace duckdb {
 
-AzureContextState::AzureContextState(const AzureReadOptions &read_options)
-    : read_options(read_options), is_valid(true) {
+AzureContextState::AzureContextState(const AzureOptions &options) : options(options), is_valid(true) {
 }
 
 bool AzureContextState::IsValid() const {
@@ -25,16 +25,16 @@ void AzureContextState::QueryEnd() {
 }
 
 AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
-                                 FileType file_type, const AzureReadOptions &read_options)
+                                 FileType file_type, const AzureOptions &options)
     : FileHandle(fs, info.path, flags), flags(flags),
       // File info
       is_remote_loaded(false), file_type(file_type), length(0), last_modified(0),
       // Read info
       buffer_available(0), buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0),
       // Options
-      read_options(read_options) {
+      options(options) {
 	if (!flags.RequireParallelAccess() && !flags.DirectIO()) {
-		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[read_options.buffer_size]);
+		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[options.read_buffer_size]);
 	}
 
 	// Set metadata of file when available, it avoids to invoke to the storage to get them.
@@ -158,7 +158,7 @@ void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_b
 		}
 
 		if (to_read > 0 && hfh.buffer_available == 0) {
-			auto new_buffer_available = MinValue<idx_t>(hfh.read_options.buffer_size, hfh.length - hfh.file_offset);
+			auto new_buffer_available = MinValue<idx_t>(hfh.options.read_buffer_size, hfh.length - hfh.file_offset);
 
 			// Bypass buffer if we read more than buffer size
 			if (to_read > new_buffer_available) {
@@ -256,22 +256,37 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 	return CreateStorageContext(opener, path, parsed_url);
 }
 
-AzureReadOptions AzureStorageFileSystem::ParseAzureReadOptions(optional_ptr<FileOpener> opener) {
-	AzureReadOptions options;
+AzureOptions AzureStorageFileSystem::ParseAzureOptions(optional_ptr<FileOpener> opener) {
+	AzureOptions options;
 
 	Value concurrency_val;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_read_transfer_concurrency", concurrency_val)) {
-		options.transfer_concurrency = concurrency_val.GetValue<int32_t>();
+		options.read_transfer_concurrency = concurrency_val.GetValue<int32_t>();
 	}
 
 	Value chunk_size_val;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_read_transfer_chunk_size", chunk_size_val)) {
-		options.transfer_chunk_size = chunk_size_val.GetValue<int64_t>();
+		options.read_transfer_chunk_size = chunk_size_val.GetValue<int64_t>();
 	}
 
 	Value buffer_size_val;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_read_buffer_size", buffer_size_val)) {
-		options.buffer_size = buffer_size_val.GetValue<idx_t>();
+		options.read_buffer_size = buffer_size_val.GetValue<idx_t>();
+	}
+
+	Value write_block_size_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_write_block_size", write_block_size_val)) {
+		auto size = write_block_size_val.GetValue<idx_t>();
+		if (size > AzureOptions::WRITE_BLOCK_SIZE_MAX) {
+			throw InvalidInputException("azure_write_block_size must be at most 4000 MiB");
+		}
+		options.write_block_size = (size > 0) ? size : AzureOptions::WRITE_BLOCK_SIZE_DEFAULT;
+	}
+
+	Value write_staged_blocks_per_commit_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_write_staged_blocks_per_commit",
+	                                     write_staged_blocks_per_commit_val)) {
+		options.write_staged_blocks_per_commit = write_staged_blocks_per_commit_val.GetValue<idx_t>();
 	}
 
 	return options;

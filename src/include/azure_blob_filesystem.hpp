@@ -15,7 +15,7 @@ namespace duckdb {
 
 class AzureBlobContextState : public AzureContextState {
 public:
-	AzureBlobContextState(Azure::Storage::Blobs::BlobServiceClient client, const AzureReadOptions &azure_read_options);
+	AzureBlobContextState(Azure::Storage::Blobs::BlobServiceClient client, const AzureOptions &options);
 	Azure::Storage::Blobs::BlobContainerClient GetBlobContainerClient(const std::string &blobContainerName) const;
 	~AzureBlobContextState() override = default;
 
@@ -28,17 +28,19 @@ class AzureBlobStorageFileSystem;
 class AzureBlobStorageFileHandle : public AzureFileHandle {
 public:
 	AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, const OpenFileInfo &info, FileOpenFlags flags,
-	                           const AzureReadOptions &read_options,
-	                           Azure::Storage::Blobs::BlockBlobClient blob_client);
+	                           const AzureOptions &options, Azure::Storage::Blobs::BlockBlobClient blob_client);
 	~AzureBlobStorageFileHandle() override = default;
 
+	void StageWriteBuffer();
 	void Sync();
 	void Close() override;
 
 public:
 	Azure::Storage::Blobs::BlockBlobClient blob_client;
 	size_t committed_block_count = 0; // maintain position while open; only used if Sync() called before Close()
-	std::vector<std::string> pending_block_ids;
+	uint32_t staged_block_count = 0;
+	duckdb::unique_ptr<data_t[]> write_buffer;
+	idx_t write_buffer_offset = 0;
 };
 
 class AzureBlobStorageFileSystem : public AzureStorageFileSystem {
