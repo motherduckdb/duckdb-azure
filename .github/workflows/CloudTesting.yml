@@ -104,7 +104,7 @@ jobs:
         env:
           DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE: 1
         run: |
-          scripts/env_azure ./build/release/duckdb -c "CREATE PERSISTENT SECRET az_authn_persistent (TYPE AZURE, PROVIDER SERVICE_PRINCIPAL, TENANT_ID '${{secrets.AZURE_TENANT_ID}}', CLIENT_ID '${{secrets.AZURE_CLIENT_ID}}', CLIENT_SECRET '${{secrets.AZURE_CLIENT_SECRET}}', ACCOUNT_NAME '${AZ_STORAGE_ACCOUNT}', SCOPE 'az://')"
+          scripts/env_azure ./build/release/duckdb -unsigned -c "LOAD './build/release/extension/azure/azure.duckdb_extension'; CREATE PERSISTENT SECRET az_authn_persistent (TYPE AZURE, PROVIDER SERVICE_PRINCIPAL, TENANT_ID '${{secrets.AZURE_TENANT_ID}}', CLIENT_ID '${{secrets.AZURE_CLIENT_ID}}', CLIENT_SECRET '${{secrets.AZURE_CLIENT_SECRET}}', ACCOUNT_NAME '${AZ_STORAGE_ACCOUNT}', SCOPE 'az://')"
           scripts/env_azure ./build/release/test/unittest "test/sql/test_data_integrity.test"
 
       - name: Test with Service Principal (SPN) in env vars (==slow)
