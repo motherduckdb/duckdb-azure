@@ -3,8 +3,10 @@
 #include "duckdb/catalog/catalog_transaction.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_opener.hpp"
+#include "duckdb/common/mutex.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/vector.hpp"
 #include "duckdb/logging/logger.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
@@ -111,6 +113,14 @@ static shared_ptr<AzureHTTPState> GetHttpState(optional_ptr<FileOpener> opener) 
 	return http_state;
 }
 
+static mutex storage_client_policies_lock;
+static vector<std::unique_ptr<Azure::Core::Http::Policies::HttpPolicy>> storage_client_policies;
+
+void AddStorageClientPolicy(std::unique_ptr<Azure::Core::Http::Policies::HttpPolicy> policy) {
+	lock_guard<mutex> guard(storage_client_policies_lock);
+	storage_client_policies.push_back(std::move(policy));
+}
+
 template <typename T>
 static T ToClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options,
                          optional_ptr<FileOpener> opener) {
@@ -126,6 +136,12 @@ static T ToClientOptions(const Azure::Core::Http::Policies::TransportOptions &tr
 		// part and not the `PerRetryPolicies`. Network issues will result in retry that can
 		// increase the input/output but will not be displayed in the EXPLAIN summary.
 		options.PerOperationPolicies.emplace_back(new HttpStatePolicy(std::move(http_state)));
+	}
+	{
+		lock_guard<mutex> guard(storage_client_policies_lock);
+		for (auto &policy : storage_client_policies) {
+			options.PerOperationPolicies.push_back(policy->Clone());
+		}
 	}
 	// Set DuckDB user-agent (per-retry, overrides user-agent after the SDK's built-in telemetry policy)
 	auto db = FileOpener::TryGetDatabase(opener);
