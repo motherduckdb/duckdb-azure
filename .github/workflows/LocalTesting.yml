@@ -75,7 +75,7 @@ jobs:
 
       - name: Run test data integrity check
         run: |
-          ./build/release/duckdb -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
+          ./build/release/duckdb -unsigned -c "LOAD './build/release/extension/azure/azure.duckdb_extension'; CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
           DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 scripts/env_azurite ./build/release/test/unittest "*test/sql/test_data_integrity.test"
 
       - name: Azure test server log
@@ -146,7 +146,7 @@ jobs:
 
       - name: Run test data integrity check
         run: |
-          ./build/release/duckdb -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
+          ./build/release/duckdb -unsigned -c "LOAD './build/release/extension/azure/azure.duckdb_extension'; CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
           DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 scripts/env_azurite ./build/release/test/unittest "*test/sql/test_data_integrity.test"
 
       - name: Azure test server log
@@ -160,7 +160,7 @@ jobs:
     name: Azurite tests (Windows)
     runs-on: windows-latest
     env:
-      VCPKG_TARGET_TRIPLET: x64-windows
+      VCPKG_TARGET_TRIPLET: x64-windows-static-release
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake
       GEN: ninja
@@ -222,7 +222,7 @@ jobs:
         run: |
           ls build
           ls build/release
-          ./build/release/duckdb.exe -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
+          ./build/release/duckdb.exe -unsigned -c "LOAD './build/release/extension/azure/azure.duckdb_extension'; CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
           DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 scripts/env_azurite build/release/test/unittest.exe "*test/sql/test_data_integrity.test"
 
       - name: Azure test server log
