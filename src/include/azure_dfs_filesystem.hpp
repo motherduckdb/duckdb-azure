@@ -84,7 +84,8 @@ protected:
 		return PATH_PREFIX;
 	}
 	shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
-	                                                   const AzureParsedUrl &parsed_url) override;
+	                                                   const AzureParsedUrl &parsed_url,
+	                                                   const string &catalog) override;
 	unique_ptr<AzureFileHandle> CreateHandle(const OpenFileInfo &info, FileOpenFlags flags,
 	                                         optional_ptr<FileOpener> opener) override;
 
