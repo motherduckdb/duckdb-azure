@@ -160,7 +160,7 @@ jobs:
     name: Azurite tests (Windows)
     runs-on: windows-latest
     env:
-      VCPKG_TARGET_TRIPLET: x64-windows
+      VCPKG_TARGET_TRIPLET: x64-windows-static-release
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake
       GEN: ninja
