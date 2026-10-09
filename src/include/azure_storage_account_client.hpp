@@ -14,8 +14,7 @@
 
 namespace duckdb {
 
-//! `catalog` is the catalog on whose behalf the storage account is accessed (see BaseSecret::catalog); when empty
-//! it is taken from the opener, so string-path entry points work through a CatalogFileOpener
+//! `catalog` is the catalog on whose behalf the storage account is accessed (see BaseSecret::catalog), or empty
 Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_ptr<FileOpener> opener,
                                                                      const std::string &path,
                                                                      const AzureParsedUrl &azure_parsed_url,
@@ -27,9 +26,6 @@ ConnectToDfsStorageAccount(optional_ptr<FileOpener> opener, const std::string &p
 
 const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::string &path,
                                const std::string &catalog = std::string());
-
-//! The catalog to look secrets up for: the explicit one, else the one the opener presents (if any)
-std::string ResolveSecretCatalog(optional_ptr<FileOpener> opener, const std::string &path, const std::string &catalog);
 
 //! Adds a policy to the pipeline of every storage client created afterwards, around all retries of an operation
 void AddStorageClientPolicy(std::unique_ptr<Azure::Core::Http::Policies::HttpPolicy> policy);

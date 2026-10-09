@@ -710,20 +710,12 @@ static Azure::Storage::Blobs::BlobServiceClient GetBlobStorageAccountClient(opti
 	return Azure::Storage::Blobs::BlobServiceClient {account_url, blob_options};
 }
 
-std::string ResolveSecretCatalog(optional_ptr<FileOpener> opener, const std::string &path, const std::string &catalog) {
-	if (!catalog.empty()) {
-		return catalog;
-	}
-	FileOpenerInfo info {path};
-	return FileOpener::TryGetSecretCatalog(opener, &info);
-}
-
 const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::string &path, const std::string &catalog) {
 	auto secret_manager = FileOpener::TryGetSecretManager(opener);
 	auto transaction = FileOpener::TryGetCatalogTransaction(opener);
 
 	if (secret_manager && transaction) {
-		return secret_manager->LookupSecret(*transaction, path, "azure", ResolveSecretCatalog(opener, path, catalog));
+		return secret_manager->LookupSecret(*transaction, path, "azure", catalog);
 	}
 
 	return {};
