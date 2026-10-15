@@ -1,5 +1,6 @@
 #include "azure_filesystem.hpp"
 
+#include "azure_storage_account_client.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types/value.hpp"
@@ -7,8 +8,6 @@
 #include "duckdb/main/client_context.hpp"
 
 #include <azure/storage/common/storage_exception.hpp>
-
-#include "azure_storage_account_client.hpp"
 
 namespace duckdb {
 
@@ -244,8 +243,11 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 
 		// Ok, now use account in key, or otherwise skip the cache
 		if (!key_path.empty()) {
-			// a catalog may resolve to its own secret for the same account, so it gets its own context
-			auto context_key = GetContextPrefix() + key_path + (catalog.empty() ? "" : "@" + catalog);
+			// a catalog gets its own context, under a key no path can spell (an unscoped one starts with the scheme)
+			auto context_key = GetContextPrefix() + key_path;
+			if (!catalog.empty()) {
+				context_key = "azure_catalog_context:" + to_string(catalog.size()) + ":" + catalog + ":" + context_key;
+			}
 			result = registered_state->Get<AzureContextState>(context_key);
 			if (!result || !result->IsValid()) {
 				result = CreateStorageContext(opener, path, parsed_url, catalog);
