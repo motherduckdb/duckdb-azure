@@ -1,6 +1,5 @@
 #include "azure_filesystem.hpp"
 
-#include "azure_storage_account_client.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types/value.hpp"
@@ -8,6 +7,8 @@
 #include "duckdb/main/client_context.hpp"
 
 #include <azure/storage/common/storage_exception.hpp>
+
+#include "azure_storage_account_client.hpp"
 
 namespace duckdb {
 
