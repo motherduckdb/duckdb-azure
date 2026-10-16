@@ -18,7 +18,7 @@ namespace duckdb {
 Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_ptr<FileOpener> opener,
                                                                      const std::string &path,
                                                                      const AzureParsedUrl &azure_parsed_url,
-                                                                     const std::string &catalog);
+                                                                     const std::string &catalog = std::string());
 
 Azure::Storage::Files::DataLake::DataLakeServiceClient
 ConnectToDfsStorageAccount(optional_ptr<FileOpener> opener, const std::string &path,
