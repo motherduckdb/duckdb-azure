@@ -187,7 +187,8 @@ int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t n
 	return nr_bytes;
 }
 
-static string GetContextKeyPath(optional_ptr<FileOpener> opener, const string &path, const AzureParsedUrl &parsed) {
+static string GetContextKeyPath(optional_ptr<FileOpener> opener, const string &path, const AzureParsedUrl &parsed,
+                                const string &catalog) {
 	// context key == proto://{storage_account}{.}{endpoint}
 	// when storage account / endpoint unavailable, try to fetch via secret manager
 	string account;
@@ -198,7 +199,7 @@ static string GetContextKeyPath(optional_ptr<FileOpener> opener, const string &p
 		endpoint = parsed.endpoint;
 	} else {
 		// no storage account? map it from the secret if possible
-		auto secret_match = LookupSecret(opener, path);
+		auto secret_match = LookupSecret(opener, path, catalog);
 		if (secret_match.HasMatch()) {
 			const auto &secret = dynamic_cast<const KeyValueSecret &>(secret_match.GetSecret());
 
@@ -227,7 +228,8 @@ static string GetContextKeyPath(optional_ptr<FileOpener> opener, const string &p
 
 shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(optional_ptr<FileOpener> opener,
                                                                                 const string &path,
-                                                                                const AzureParsedUrl &parsed_url) {
+                                                                                const AzureParsedUrl &parsed_url,
+                                                                                const string &catalog) {
 	Value value;
 	bool azure_context_caching = true;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_context_caching", value)) {
@@ -237,22 +239,26 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 
 	shared_ptr<AzureContextState> result;
 	if (azure_context_caching && client_context) {
-		string key_path = GetContextKeyPath(opener, path, parsed_url);
+		string key_path = GetContextKeyPath(opener, path, parsed_url, catalog);
 		auto &registered_state = client_context->registered_state;
 
 		// Ok, now use account in key, or otherwise skip the cache
 		if (!key_path.empty()) {
+			// a catalog gets its own context, under a key no path can spell (an unscoped one starts with the scheme)
 			auto context_key = GetContextPrefix() + key_path;
+			if (!catalog.empty()) {
+				context_key = "azure_catalog_context:" + to_string(catalog.size()) + ":" + catalog + ":" + context_key;
+			}
 			result = registered_state->Get<AzureContextState>(context_key);
 			if (!result || !result->IsValid()) {
-				result = CreateStorageContext(opener, path, parsed_url);
+				result = CreateStorageContext(opener, path, parsed_url, catalog);
 				registered_state->Insert(context_key, result);
 				return result;
 			}
 		}
 	}
 
-	return CreateStorageContext(opener, path, parsed_url);
+	return CreateStorageContext(opener, path, parsed_url, catalog);
 }
 
 AzureOptions AzureStorageFileSystem::ParseAzureOptions(optional_ptr<FileOpener> opener) {

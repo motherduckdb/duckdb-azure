@@ -133,10 +133,13 @@ protected:
 	virtual void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) = 0;
 
 	virtual const string &GetContextPrefix() const = 0;
+	//! `catalog` as in ConnectToBlobStorageAccount: the catalog the storage context resolves its secret for
 	shared_ptr<AzureContextState> GetOrCreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
-	                                                        const AzureParsedUrl &parsed_url);
+	                                                        const AzureParsedUrl &parsed_url,
+	                                                        const string &catalog = string());
 	virtual shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
-	                                                           const AzureParsedUrl &parsed_url) = 0;
+	                                                           const AzureParsedUrl &parsed_url,
+	                                                           const string &catalog) = 0;
 
 	virtual void LoadRemoteFileInfo(AzureFileHandle &handle) = 0;
 	static AzureOptions ParseAzureOptions(optional_ptr<FileOpener> opener);

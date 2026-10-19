@@ -159,7 +159,7 @@ unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const OpenFi
 	}
 
 	auto parsed_url = ParseUrl(info.path);
-	auto storage_context = GetOrCreateStorageContext(opener, info.path, parsed_url);
+	auto storage_context = GetOrCreateStorageContext(opener, info.path, parsed_url, info.catalog);
 	auto file_system_client = storage_context->As<AzureDfsContextState>().GetDfsFileSystemClient(parsed_url.container);
 
 	// A trailing '/' is only a directory hint, not part of the resource name. Some DFS endpoints (e.g. OneLake)
@@ -378,10 +378,12 @@ void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_of
 
 shared_ptr<AzureContextState> AzureDfsStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
                                                                               const string &path,
-                                                                              const AzureParsedUrl &parsed_url) {
+                                                                              const AzureParsedUrl &parsed_url,
+                                                                              const string &catalog) {
 	auto azure_options = ParseAzureOptions(opener);
 
-	return make_shared_ptr<AzureDfsContextState>(ConnectToDfsStorageAccount(opener, path, parsed_url), azure_options);
+	return make_shared_ptr<AzureDfsContextState>(ConnectToDfsStorageAccount(opener, path, parsed_url, catalog),
+	                                             azure_options);
 }
 
 int64_t AzureDfsStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes) {
