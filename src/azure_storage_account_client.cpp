@@ -710,12 +710,12 @@ static Azure::Storage::Blobs::BlobServiceClient GetBlobStorageAccountClient(opti
 	return Azure::Storage::Blobs::BlobServiceClient {account_url, blob_options};
 }
 
-const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::string &path) {
+const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::string &path, const Identifier &catalog) {
 	auto secret_manager = FileOpener::TryGetSecretManager(opener);
 	auto transaction = FileOpener::TryGetCatalogTransaction(opener);
 
 	if (secret_manager && transaction) {
-		return secret_manager->LookupSecret(*transaction, path, "azure");
+		return secret_manager->LookupSecret(*transaction, path, "azure", catalog);
 	}
 
 	return {};
@@ -723,8 +723,9 @@ const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::strin
 
 Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_ptr<FileOpener> opener,
                                                                      const std::string &path,
-                                                                     const AzureParsedUrl &azure_parsed_url) {
-	auto secret_match = LookupSecret(opener, path);
+                                                                     const AzureParsedUrl &azure_parsed_url,
+                                                                     const Identifier &catalog) {
+	auto secret_match = LookupSecret(opener, path, catalog);
 	if (secret_match.HasMatch()) {
 		const auto &base_secret = secret_match.GetSecret();
 		return GetBlobStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret), azure_parsed_url);
@@ -736,8 +737,8 @@ Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_pt
 
 Azure::Storage::Files::DataLake::DataLakeServiceClient
 ConnectToDfsStorageAccount(optional_ptr<FileOpener> opener, const std::string &path,
-                           const AzureParsedUrl &azure_parsed_url) {
-	auto secret_match = LookupSecret(opener, path);
+                           const AzureParsedUrl &azure_parsed_url, const Identifier &catalog) {
+	auto secret_match = LookupSecret(opener, path, catalog);
 	if (secret_match.HasMatch()) {
 		const auto &base_secret = secret_match.GetSecret();
 		return GetDfsStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret), azure_parsed_url);

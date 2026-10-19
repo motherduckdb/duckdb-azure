@@ -137,7 +137,7 @@ unique_ptr<AzureFileHandle> AzureBlobStorageFileSystem::CreateHandle(const OpenF
 	}
 
 	auto parsed_url = ParseUrl(info.path);
-	auto storage_context = GetOrCreateStorageContext(opener, info.path, parsed_url);
+	auto storage_context = GetOrCreateStorageContext(opener, info.path, parsed_url, info.catalog);
 	auto container = storage_context->As<AzureBlobContextState>().GetBlobContainerClient(parsed_url.container);
 	auto blob_client = container.GetBlockBlobClient(parsed_url.path);
 
@@ -430,10 +430,12 @@ void AzureBlobStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_o
 
 shared_ptr<AzureContextState> AzureBlobStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
                                                                                const string &path,
-                                                                               const AzureParsedUrl &parsed_url) {
+                                                                               const AzureParsedUrl &parsed_url,
+                                                                               const Identifier &catalog) {
 	auto azure_options = ParseAzureOptions(opener);
 
-	return make_shared_ptr<AzureBlobContextState>(ConnectToBlobStorageAccount(opener, path, parsed_url), azure_options);
+	return make_shared_ptr<AzureBlobContextState>(ConnectToBlobStorageAccount(opener, path, parsed_url, catalog),
+	                                              azure_options);
 }
 
 int64_t AzureBlobStorageFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes) {
