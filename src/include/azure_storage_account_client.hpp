@@ -14,17 +14,19 @@
 
 namespace duckdb {
 
+//! `catalog` is the catalog on whose behalf the storage account is accessed (see BaseSecret::catalog), or empty
 Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_ptr<FileOpener> opener,
                                                                      const std::string &path,
-                                                                     const AzureParsedUrl &azure_parsed_url);
+                                                                     const AzureParsedUrl &azure_parsed_url,
+                                                                     const Identifier &catalog = Identifier());
 
 Azure::Storage::Files::DataLake::DataLakeServiceClient
 ConnectToDfsStorageAccount(optional_ptr<FileOpener> opener, const std::string &path,
-                           const AzureParsedUrl &azure_parsed_url);
+                           const AzureParsedUrl &azure_parsed_url, const Identifier &catalog = Identifier());
 
 // Scopes match by prefix, and the path is used as given: a directory operation passes its path with a trailing '/',
 // so that a secret scoped to '<dir>/' covers the directory itself, while a file operation on '<dir>' looks up '<dir>'.
-const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::string &path);
+const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::string &path, const Identifier &catalog);
 
 //! Adds a policy to the pipeline of every storage client created afterwards, around all retries of an operation
 void AddStorageClientPolicy(std::unique_ptr<Azure::Core::Http::Policies::HttpPolicy> policy);

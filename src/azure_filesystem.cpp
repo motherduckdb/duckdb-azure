@@ -277,7 +277,8 @@ static idx_t CountContextStates(RegisteredStateManager &registered_state) {
 
 shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(optional_ptr<FileOpener> opener,
                                                                                 const string &path,
-                                                                                const AzureParsedUrl &parsed_url) {
+                                                                                const AzureParsedUrl &parsed_url,
+                                                                                const Identifier &catalog) {
 	Value value;
 	bool azure_context_caching = true;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_context_caching", value)) {
@@ -286,7 +287,7 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 	auto client_context = FileOpener::TryGetClientContext(opener);
 
 	if (azure_context_caching && client_context) {
-		auto secret_match = LookupSecret(opener, path);
+		auto secret_match = LookupSecret(opener, path, catalog);
 		string key_path = GetContextKeyPath(secret_match, parsed_url);
 		auto &registered_state = client_context->registered_state;
 
@@ -294,11 +295,17 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 		if (!key_path.empty()) {
 			// A client built for another secret (or none) on the same account must not serve this path
 			auto context_key = GetContextPrefix() + key_path + "#" + GetContextCredentialKey(secret_match);
+			// a catalog gets its own context, under a key no path can spell (an unscoped one starts with the scheme)
+			if (!catalog.empty()) {
+				const auto catalog_name = StringUtil::Lower(catalog.GetIdentifierName());
+				context_key =
+				    "azure_catalog_context:" + to_string(catalog_name.size()) + ":" + catalog_name + ":" + context_key;
+			}
 			auto result = registered_state->Get<AzureContextState>(context_key);
 			if (result && result->IsValid()) {
 				return result;
 			}
-			result = CreateStorageContext(opener, path, parsed_url);
+			result = CreateStorageContext(opener, path, parsed_url, catalog);
 			result->cache_key = context_key;
 			// Insert keeps an existing entry; an invalid one is normally removed at its query's end already
 			registered_state->Remove(context_key);
@@ -309,7 +316,7 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 		}
 	}
 
-	return CreateStorageContext(opener, path, parsed_url);
+	return CreateStorageContext(opener, path, parsed_url, catalog);
 }
 
 string AzureStorageFileSystem::AsDirectoryPath(const string &path) {
